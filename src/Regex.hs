@@ -1,5 +1,5 @@
 module Regex
-  ( RegexValue
+  ( RegexValue(..)
   , scanRegex
   ) where
 
@@ -119,7 +119,8 @@ regexCharSetS = RegexCharSet . concat <$> charSetSequenceS
 
 -- [^a-z] -type of set of chars
 regexNegativeCharSetS :: Scanner RegexValue
-regexNegativeCharSetS = RegexCharSet . concat <$> negativeCharSetSequenceS
+regexNegativeCharSetS =
+  RegexNegativeCharSet . concat <$> negativeCharSetSequenceS
 
 -- star expression
 regexStarS :: Scanner RegexValue
