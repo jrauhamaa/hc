@@ -16,7 +16,10 @@ maintainer:          johannes.rauhamaa@iki.fi
 extra-source-files:  CHANGELOG.md
 
 library
-  exposed-modules:     Regex, NFA
+  exposed-modules:     Regex
+                     , NFA
+                     , Scanner
+                     , Terminal
   -- other-modules:
   -- other-extensions:
   build-depends:       base ^>=4.14.1.0

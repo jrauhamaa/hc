@@ -2,6 +2,8 @@ module NFA
   ( NFA(..)
   , Transition
   , fromRegexValue
+  , readInput
+  , isAccepting
   ) where
 
 import qualified Data.Map as M
@@ -9,6 +11,9 @@ import qualified Data.Set as S
 
 import Regex (RegexValue(..))
 
+----------------
+-- DATA TYPES --
+----------------
 type Transition = M.Map (Char, Int) (S.Set Int)
 
 data NFA =
@@ -18,6 +23,9 @@ data NFA =
     }
   deriving (Eq, Show)
 
+---------------
+-- UTILITIES --
+---------------
 -- shift state numbers by nShift
 shiftTransition :: Transition -> Int -> Transition
 shiftTransition oldT nShift =
@@ -52,6 +60,16 @@ charTransition chars src dest = M.fromList $ map transitionItem chars
   where
     transitionItem c = ((c, src), dest)
 
+-- Follow epsilon transitions. NOTE: infinite recursion when circular epsilons
+epsilonTransitions :: NFA -> Int -> S.Set Int
+epsilonTransitions nfa state = S.union nextStates twoEpsilons
+  where
+    nextStates = M.findWithDefault S.empty ('\NUL', state) (transition nfa)
+    twoEpsilons = S.fold S.union S.empty $ S.map (epsilonTransitions nfa) nextStates
+
+---------
+-- API --
+---------
 -- single char
 fromRegexValue :: RegexValue -> NFA
 fromRegexValue (RegexChar c) =
@@ -105,9 +123,19 @@ fromRegexValue (RegexUnion res) =
     shiftAmounts = scanl (+) 1 $ map nStates nfas
     shifted = zipWith shiftTransition transitionFns shiftAmounts
     startStates = map succ $ init shiftAmounts
-    startTransitions =
-      M.fromList [(('\NUL', 1), S.fromList startStates)]
+    startTransitions = M.fromList [(('\NUL', 1), S.fromList startStates)]
     acceptStates = tail shiftAmounts
     acceptTransitions =
       M.fromList $ map (\x -> (('\NUL', x), S.singleton nStates')) acceptStates
     allTransitions = startTransitions : acceptTransitions : shifted
+
+-- move to next state
+readInput :: NFA -> S.Set Int -> Char -> S.Set Int
+readInput nfa currentStates inputChar = S.union newStates epsilons
+  where
+    newStates = S.fold S.union S.empty $ S.map find currentStates
+    find state = M.findWithDefault S.empty (inputChar, state) (transition nfa)
+    epsilons = S.fold S.union S.empty $ S.map (epsilonTransitions nfa) newStates
+
+isAccepting :: NFA -> S.Set Int -> Bool
+isAccepting nfa states = S.member (nStates nfa) states
