@@ -1,10 +1,16 @@
 module Main where
 
-import Regex (scanRegex)
-import qualified NFA
+import Scanner (fromSpec, scanInput)
+import Terminal (CTerminal(..), terminals)
 
-testRegex :: String
-testRegex = "re(re)[e-r]re"
+
+testInput :: String
+testInput = "int float -123.4 true label"
+
+testOutput :: Maybe [CTerminal]
+testOutput = do
+  scnr <- fromSpec terminals
+  scanInput scnr testInput
 
 main :: IO ()
-main = print $ NFA.fromRegexValue <$> scanRegex testRegex
+main = print testOutput

@@ -103,7 +103,7 @@ regexAnyS = fmap (const RegexAny) (charS ".")
 
 -- escaped character
 escapeSequenceS :: Scanner RegexValue
-escapeSequenceS = RegexChar <$> (charS "\\" *> charS "[]()*.\\")
+escapeSequenceS = RegexChar <$> (charS "\\" *> charS "[]()*.\\|")
 
 -- the entire regex
 regexSequenceS :: Scanner RegexValue
