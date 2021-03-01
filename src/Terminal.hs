@@ -38,9 +38,8 @@ terminals =
   , (const CNull, "null")
   , (CStringLiteral . init . tail, "\"([^\"]|(\\\\\"))*\"")
   , (CCharLiteral . charLiteralToChar, "'[^']|(\\\\[nt\\\\'])'")
-  , (CIntLiteral . read, "1|2")
-  -- , (CIntLiteral . read, "(-[0-9])|[0-9][0-9]*")
-  , ( CFloatLiteral . read . (\(a, b) -> a ++ "0" ++ b) . span (/= '.')
+  , (CIntLiteral . read, "(-[0-9])|[0-9][0-9]*")
+  , ( CFloatLiteral . read . (\(a, b) -> a ++ "0" ++ b) . span (== '-')
     , "(-[0-9]*)|([0-9]*)\\.[0-9][0-9]*")
   , (CLabel, "[a-zA-Z_][a-zA-Z0-9_]*")
   ]

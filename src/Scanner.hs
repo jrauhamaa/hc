@@ -25,16 +25,16 @@ data Scanner =
     }
 
 fromSpec :: [(String -> CTerminal, String)] -> Maybe Scanner
-fromSpec spec = do
-  regexList <- sequenceA regexes
-  return
-    Scanner
-      { constructors = map fst spec
-      , nfas = map N.fromRegexValue regexList
-      , state = map (const $ S.singleton 1) spec
-      }
+fromSpec spec = getScanner <$> sequenceA regexes
   where
     regexes = map (scanRegex . snd) spec
+    getScanner regexList =
+      let nfas' = map N.fromRegexValue regexList
+       in Scanner
+            { constructors = map fst spec
+            , nfas = nfas'
+            , state = map N.initialState nfas'
+            }
 
 scanTerminal :: Scanner -> String -> String -> Maybe (String, CTerminal)
 scanTerminal _ "" _ = Nothing
