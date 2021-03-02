@@ -65,7 +65,5 @@ scanInput :: Scanner -> String -> Maybe [CTerminal]
 scanInput _ "" = Just []
 scanInput scanner input = do
   (unScanned, terminal) <- scanTerminal scanner input ""
-  rest <- scanInput scanner $ dropWhiteSpace unScanned
+  rest <- scanInput scanner unScanned
   return (terminal : rest)
-  where
-    dropWhiteSpace = dropWhile (`elem` " \n\t")

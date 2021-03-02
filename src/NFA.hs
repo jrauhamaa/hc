@@ -60,7 +60,9 @@ concatNFA nfa1 nfa2 = getNFA nStates' transition'
 
 -- list of all recognized chars
 allChars :: String
-allChars = [' ' .. '~']
+allChars =
+  ['a' .. 'z'] <>
+  ['A' .. 'Z'] <> ['0' .. '9'] <> "!\"#%&'()*+,-./:;<=>?[\\]^_{|}~" <> " \n\t\r"
 
 -- transition function that moves from src to dest when encouters any of chars
 charTransition :: String -> Int -> S.Set Int -> Transition
@@ -113,6 +115,15 @@ fromRegexValue (RegexCharSet charSet) = getNFA 2 $ M.unions transitions
 -- accept any char not in the set
 fromRegexValue (RegexNegativeCharSet charSet) =
   fromRegexValue $ RegexCharSet $ filter (`notElem` charSet) allChars
+fromRegexValue (RegexOptional re) =
+  getNFA nStates' $
+  M.unionWith
+    S.union
+    (transition optionalNFA)
+    (M.singleton ('\NUL', 1) (S.singleton nStates'))
+  where
+    optionalNFA = fromRegexValue re
+    nStates' = nStates optionalNFA
 -- accept any pattern in the union
 fromRegexValue (RegexUnion res) =
   getNFA nStates' $ foldr (M.unionWith S.union) M.empty allTransitions
@@ -123,7 +134,7 @@ fromRegexValue (RegexUnion res) =
     shiftAmounts = scanl (+) 1 $ map nStates nfas
     shifted = zipWith shiftTransition transitionFns shiftAmounts
     startStates = map succ $ init shiftAmounts
-    startTransitions = M.fromList [(('\NUL', 1), S.fromList startStates)]
+    startTransitions = M.singleton ('\NUL', 1) (S.fromList startStates)
     acceptStates = tail shiftAmounts
     acceptTransitions =
       M.fromList $ map (\x -> (('\NUL', x), S.singleton nStates')) acceptStates

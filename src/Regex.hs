@@ -16,6 +16,7 @@ data RegexValue
   | RegexNegativeCharSet [Char] -- anything except members
   | RegexAny -- any char (dot)
   | RegexUnion [RegexValue] -- match against any of the regexvalues
+  | RegexOptional RegexValue -- 0 or 1 occurrences
   deriving (Eq, Show)
 
 newtype Scanner a =
@@ -71,14 +72,14 @@ negativeCharSetSequenceS =
   charS "[" *> charS "^" *> many (charRangeS <|> ((: "") <$> notCharS "^]")) <*
   charS "]"
 
-starScanners :: Scanner RegexValue
-starScanners =
+baseScanners :: Scanner RegexValue
+baseScanners =
   regexCharS <|> escapeSequenceS <|> regexAnyS <|> regexSubSequenceS <|>
   regexCharSetS <|>
   regexNegativeCharSetS
 
 unionScanners :: Scanner RegexValue
-unionScanners = regexStarS <|> starScanners
+unionScanners = regexStarS <|> regexOptionalS <|> baseScanners
 
 regexScanners :: Scanner RegexValue
 regexScanners = regexUnionS <|> unionScanners
@@ -95,7 +96,7 @@ unionListS = (++) <$> simpleUnionS <*> many (charS "|" *> unionScanners)
 --------------------
 -- normal character
 regexCharS :: Scanner RegexValue
-regexCharS = RegexChar <$> notCharS "()[].*|\\"
+regexCharS = RegexChar <$> notCharS "()[].*|\\?"
 
 -- dot
 regexAnyS :: Scanner RegexValue
@@ -103,7 +104,7 @@ regexAnyS = fmap (const RegexAny) (charS ".")
 
 -- escaped character
 escapeSequenceS :: Scanner RegexValue
-escapeSequenceS = RegexChar <$> (charS "\\" *> charS "[]()*.\\|")
+escapeSequenceS = RegexChar <$> (charS "\\" *> charS "[]()*.\\|?")
 
 -- the entire regex
 regexSequenceS :: Scanner RegexValue
@@ -122,9 +123,13 @@ regexNegativeCharSetS :: Scanner RegexValue
 regexNegativeCharSetS =
   RegexNegativeCharSet . concat <$> negativeCharSetSequenceS
 
+-- optional sequence
+regexOptionalS :: Scanner RegexValue
+regexOptionalS = RegexOptional <$> (baseScanners <* charS "?")
+
 -- star expression
 regexStarS :: Scanner RegexValue
-regexStarS = RegexStar <$> (starScanners <* charS "*")
+regexStarS = RegexStar <$> (baseScanners <* charS "*")
 
 -- union
 regexUnionS :: Scanner RegexValue
@@ -138,4 +143,4 @@ scanRegex re = do
   (unscanned, scanned) <- runScanner regexSequenceS re
   if null unscanned
     then return scanned
-    else Nothing
+    else Nothing -- if not entire regex was scanned
