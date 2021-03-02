@@ -1,16 +1,20 @@
 module Main where
 
+import System.IO
+
 import Scanner (fromSpec, scanInput)
 import Terminal (CTerminal(..), terminals)
 
-
-testInput :: String
-testInput = "int float -123.4 true label"
-
-testOutput :: Maybe [CTerminal]
-testOutput = do
+scanFileContents :: String -> Maybe [CTerminal]
+scanFileContents toParse = do
   scnr <- fromSpec terminals
-  scanInput scnr testInput
+  scanInput scnr toParse
 
 main :: IO ()
-main = print testOutput
+main = do
+  withFile
+    "test/hello.c"
+    ReadMode
+    (\f -> do
+       contents <- hGetContents f
+       print $ scanFileContents contents)
