@@ -3,6 +3,7 @@ module Scanner
   , fromSpec
   , scanTerminal
   , scanInput
+  , ScanElement
   ) where
 
 import Control.Applicative ((<|>))
@@ -19,10 +20,18 @@ state: state of corresponding constructors
 -}
 data Scanner =
   Scanner
-    { constructors :: [String -> CTerminal]
+    { constructors :: [String -> Coordinates -> ScanElement]
     , nfas :: [N.NFA]
     , state :: [S.Set Int]
     }
+
+type ScanElement = (CTerminal, Coordinates)
+
+type Row = Int
+
+type Column = Int
+
+type Coordinates = (Row, Column)
 
 fromSpec :: [(String -> CTerminal, String)] -> Maybe Scanner
 fromSpec spec = getScanner <$> sequenceA regexes
@@ -31,17 +40,29 @@ fromSpec spec = getScanner <$> sequenceA regexes
     getScanner regexList =
       let nfas' = map N.fromRegexValue regexList
        in Scanner
-            { constructors = map fst spec
+            { constructors = map (getScanFunction . fst) spec
             , nfas = nfas'
             , state = map N.initialState nfas'
             }
 
-scanTerminal :: Scanner -> String -> String -> Maybe (String, CTerminal)
-scanTerminal _ "" _ = Nothing
-scanTerminal scanner (inputChar:unscanned) scanned =
+-- add row & col information to scan result
+getScanFunction :: (String -> CTerminal) -> String -> Coordinates -> ScanElement
+getScanFunction scanf s (oldRow, oldCol) = (scanf s, (nextRow, nextCol))
+  where
+    nextRow = oldRow + (length . filter (== '\n') $ s)
+    nextCol =
+      if '\n' `elem` s
+        then length . takeWhile (/= '\n') . reverse $ s
+        else oldCol + length s
+
+scanTerminal ::
+     Scanner -> String -> String -> Coordinates -> Maybe (String, ScanElement)
+scanTerminal _ "" _ _ = Nothing
+scanTerminal scanner (inputChar:unscanned) scanned (oldRow, oldCol) =
   if finishedScanning
     then newResult
-    else scanTerminal newScanner unscanned newScanned <|> newResult
+    else scanTerminal newScanner unscanned newScanned (oldRow, oldCol) <|>
+         newResult
   where
     newStates =
       zipWith3 N.readInput (nfas scanner) (state scanner) (repeat inputChar)
@@ -51,7 +72,9 @@ scanTerminal scanner (inputChar:unscanned) scanned =
     newScanned = scanned ++ [inputChar]
     newResult =
       if not $ null acceptingConstructors
-        then Just (unscanned, head acceptingConstructors newScanned)
+        then Just
+               ( unscanned
+               , head acceptingConstructors newScanned (oldRow, oldCol))
         else Nothing
     finishedScanning = all (== S.empty) newStates
     newScanner =
@@ -61,9 +84,10 @@ scanTerminal scanner (inputChar:unscanned) scanned =
         , state = newStates
         }
 
-scanInput :: Scanner -> String -> Maybe [CTerminal]
-scanInput _ "" = Just []
-scanInput scanner input = do
-  (unScanned, terminal) <- scanTerminal scanner input ""
-  rest <- scanInput scanner unScanned
-  return (terminal : rest)
+scanInput :: Scanner -> String -> Coordinates -> Maybe [ScanElement]
+scanInput _ "" _ = Just []
+scanInput scanner input (row, col) = do
+  (unScanned, (terminal, (newRow, newCol))) <-
+    scanTerminal scanner input "" (row, col)
+  rest <- scanInput scanner unScanned (newRow, newCol)
+  return ((terminal, (row, col)) : rest)

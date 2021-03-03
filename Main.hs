@@ -2,13 +2,13 @@ module Main where
 
 import System.IO
 
-import Scanner (fromSpec, scanInput)
-import Terminal (CTerminal(..), terminals)
+import Scanner (fromSpec, scanInput, ScanElement)
+import Terminal (terminals)
 
-scanFileContents :: String -> Maybe [CTerminal]
+scanFileContents :: String -> Maybe [ScanElement]
 scanFileContents toParse = do
   scnr <- fromSpec terminals
-  scanInput scnr toParse
+  scanInput scnr toParse (1, 1)
 
 main :: IO ()
 main = do
