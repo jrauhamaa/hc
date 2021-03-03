@@ -19,7 +19,8 @@ library
   exposed-modules:     Regex
                      , NFA
                      , Scanner
-                     , Terminal
+                     , Lexeme
+                     , Parser
   -- other-modules:
   -- other-extensions:
   build-depends:       base ^>=4.14.1.0

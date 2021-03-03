@@ -3,11 +3,11 @@ module Main where
 import System.IO
 
 import Scanner (fromSpec, scanInput, ScanElement)
-import Terminal (terminals)
+import Lexeme (lexemes)
 
 scanFileContents :: String -> Maybe [ScanElement]
 scanFileContents toParse = do
-  scnr <- fromSpec terminals
+  scnr <- fromSpec lexemes
   scanInput scnr toParse (1, 1)
 
 main :: IO ()

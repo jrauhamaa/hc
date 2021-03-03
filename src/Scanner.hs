@@ -1,7 +1,7 @@
 module Scanner
   ( Scanner(..)
   , fromSpec
-  , scanTerminal
+  , scanLexeme
   , scanInput
   , ScanElement
   ) where
@@ -11,10 +11,10 @@ import qualified Data.Set as S
 
 import qualified NFA as N
 import Regex (scanRegex)
-import Terminal (CTerminal(..))
+import Lexeme (CLexeme(..))
 
 {-
-constructors: list of functions mapping scanned strings to terminals
+constructors: list of functions mapping scanned strings to lexemes
 nfas: nfas of corresponding constructors
 state: state of corresponding constructors
 -}
@@ -25,7 +25,7 @@ data Scanner =
     , state :: [S.Set Int]
     }
 
-type ScanElement = (CTerminal, Coordinates)
+type ScanElement = (CLexeme, Coordinates)
 
 type Row = Int
 
@@ -33,7 +33,7 @@ type Column = Int
 
 type Coordinates = (Row, Column)
 
-fromSpec :: [(String -> CTerminal, String)] -> Maybe Scanner
+fromSpec :: [(String -> CLexeme, String)] -> Maybe Scanner
 fromSpec spec = getScanner <$> sequenceA regexes
   where
     regexes = map (scanRegex . snd) spec
@@ -46,7 +46,7 @@ fromSpec spec = getScanner <$> sequenceA regexes
             }
 
 -- add row & col information to scan result
-getScanFunction :: (String -> CTerminal) -> String -> Coordinates -> ScanElement
+getScanFunction :: (String -> CLexeme) -> String -> Coordinates -> ScanElement
 getScanFunction scanf s (oldRow, oldCol) = (scanf s, (nextRow, nextCol))
   where
     nextRow = oldRow + (length . filter (== '\n') $ s)
@@ -55,13 +55,13 @@ getScanFunction scanf s (oldRow, oldCol) = (scanf s, (nextRow, nextCol))
         then length . takeWhile (/= '\n') . reverse $ s
         else oldCol + length s
 
-scanTerminal ::
+scanLexeme ::
      Scanner -> String -> String -> Coordinates -> Maybe (String, ScanElement)
-scanTerminal _ "" _ _ = Nothing
-scanTerminal scanner (inputChar:unscanned) scanned (oldRow, oldCol) =
+scanLexeme _ "" _ _ = Nothing
+scanLexeme scanner (inputChar:unscanned) scanned (oldRow, oldCol) =
   if finishedScanning
     then newResult
-    else scanTerminal newScanner unscanned newScanned (oldRow, oldCol) <|>
+    else scanLexeme newScanner unscanned newScanned (oldRow, oldCol) <|>
          newResult
   where
     newStates =
@@ -87,7 +87,7 @@ scanTerminal scanner (inputChar:unscanned) scanned (oldRow, oldCol) =
 scanInput :: Scanner -> String -> Coordinates -> Maybe [ScanElement]
 scanInput _ "" _ = Just []
 scanInput scanner input (row, col) = do
-  (unScanned, (terminal, (newRow, newCol))) <-
-    scanTerminal scanner input "" (row, col)
+  (unScanned, (lexeme, (newRow, newCol))) <-
+    scanLexeme scanner input "" (row, col)
   rest <- scanInput scanner unScanned (newRow, newCol)
-  return ((terminal, (row, col)) : rest)
+  return ((lexeme, (row, col)) : rest)
