@@ -1,12 +1,7 @@
-module Parser where
-
-import Lexeme (CLexeme(..))
-
-type Identifier = String
+module ParseElements where
 
 -- TODO: eliminate left recursion
-
-data CIdentifier = CIdentifier String
+newtype CIdentifier = CIdentifier String
 
 data CConstant
   -- float literal
@@ -19,179 +14,187 @@ data CConstant
   | CConstantCharacter Char
 
 data CPrimaryExpression
-  = CPrimaryExprIdentifier Identifier
-  | CPrimaryExprConstant CConstant
-  | CPrimaryExprStrLiteral String
-  | CPrimaryExprParenthesized CExpression
+  = CPrimaryExpressionId CIdentifier
+  | CPrimaryExpressionConst CConstant
+  | CPrimaryExpressionStr String
+  | CPrimaryExpressionParen CExpression
 
 data CPostfixExpression
   -- CPrimaryExpression
-  = CPostfixExprEmpty CPrimaryExpression
+  = CPostfixExpressionEmpty CPrimaryExpression
   -- CPostfixExpression [ CExpression ]
-  | CPostfixExprIndexed CPostfixExpression CExpression
+  | CPostfixExpressionIndexed CPostfixExpression CExpression
   -- CPostfixExpression ( CArgumentExpressionList (optional) )
-  | CPostfixExprArgList CPostfixExpression CArgumentExpressionList
-  -- CPostfixExpression . identifier
-  | CPostfixExprStructField CPostfixExpression Identifier
-  -- CPostfixExpression -> identifier
-  | CPostfixExprStructPointer CPostfixExpression Identifier
+  | CPostfixExpressionArgList CPostfixExpression CArgumentExpressionList
+  -- CPostfixExpression . CIdentifier
+  | CPostfixExpressionStructField CPostfixExpression CIdentifier
+  -- CPostfixExpression -> CIdentifier
+  | CPostfixExpressionStructPointer CPostfixExpression CIdentifier
   -- CPostfixExpression ++
-  | CPostfixExprIncrement CPostfixExpression
+  | CPostfixExpressionIncrement CPostfixExpression
   -- CPostfixExpression --
-  | CPostfixExprDecrement CPostfixExpression
+  | CPostfixExpressionDecrement CPostfixExpression
 
 data CArgumentExpressionList
   -- CAssignmentExpression
-  = CArgExprListEmpty CAssignmentExpression
+  = CArgumentExpressionListEmpty CAssignmentExpression
   -- CArgumentExpressionList . CAssignmentExpression
-  | CArgExprListMulti CArgumentExpressionList CAssignmentExpression
+  | CArgumentExpressionListMulti CArgumentExpressionList CAssignmentExpression
 
 data CUnaryExpression
   -- CPostfixExpression
-  = CUnaryExprEmpty CPostfixExpression
+  = CUnaryExpressionEmpty CPostfixExpression
   -- ++ CUnaryExpression
-  | CUnaryExprIncrement
+  | CUnaryExpressionIncr
   -- -- CUnaryExpression
-  | CUnaryExprDecrement
+  | CUnaryExpressionDecr
   -- CUnaryOperator CCastExpression
-  | CUnaryExprCast CUnaryOperator CCastExpression
+  | CUnaryExpressionCast CUnaryOperator CCastExpression
   -- sizeof CUnaryExpression
-  | CUnaryExprSizeof CUnaryExpression
+  | CUnaryExpressionSizeof CUnaryExpression
   -- sizeof ( CTypeName )
-  | CUnaryExprSizeofType CTypeName
+  | CUnaryExpressionSizeofType CTypeName
 
 data CUnaryOperator
-  = CUnaryOpAddress             -- &
-  | CUnaryOpMultiply            -- *
-  | CUnaryOpPlus                -- +
-  | CUnaryOpMinus               -- -
-  | CUnaryOpBitwiseNot          -- ~
-  | CUnaryOpNot                 -- !
+  = CUnaryOperatorAddress       -- &
+  | CUnaryOperatorMultiply      -- *
+  | CUnaryOperatorPlus          -- +
+  | CUnaryOperatorMinus         -- -
+  | CUnaryOperatorBitwiseNot    -- ~
+  | CUnaryOperatorNot           -- !
 
 data CCastExpression
   -- CUnaryExpression
-  = CCastExprEmpty CUnaryExpression
+  = CCastExpressionEmpty CUnaryExpression
   -- ( CTypeName ) CCastExpression
-  | CCastExprCast CTypeName CCastExpression
+  | CCastExpressionCast CTypeName CCastExpression
 
 data CMultiplicativeExpression
   -- CCastExpression
-  = CMultExprEmpty CCastExpression
+  = CMultiplicativeExpressionEmpty CCastExpression
   -- CMultiplicativeExpression * CCastExpression
-  | CMultExprMultiplication CMultiplicativeExpression CCastExpression
+  | CMultiplicativeExpressionMult CMultiplicativeExpression CCastExpression
   -- CMultiplicativeExpression / CCastExpression
-  | CMultExprDivision CMultiplicativeExpression CCastExpression
+  | CMultiplicativeExpressionDiv CMultiplicativeExpression CCastExpression
   -- CMultiplicativeExpression % CCastExpression
-  | CMultExprModulo CMultiplicativeExpression CCastExpression
+  | CMultiplicativeExpressionMod CMultiplicativeExpression CCastExpression
 
 data CAdditiveExpression
   -- CMultiplicativeExpression
-  = CAddExprEmpty CMultiplicativeExpression
+  = CAdditiveExpressionEmpty CMultiplicativeExpression
   -- CAdditiveExpression + CMultiplicativeExpression
-  | CAddExprAddition CAdditiveExpression CMultiplicativeExpression
+  | CAdditiveExpressionPlus CAdditiveExpression CMultiplicativeExpression
   -- CAdditiveExpression - CMultiplicativeExpression
-  | CAddExprSubtraction CAdditiveExpression CMultiplicativeExpression
+  | CAdditiveExpressionMinus CAdditiveExpression CMultiplicativeExpression
 
 data CShiftExpression
   -- CAdditiveExpression
-  = CShiftExprEmpty CAdditiveExpression
+  = CShiftExpressionEmpty CAdditiveExpression
   -- CShiftExpression << CAdditiveExpression
-  | CShiftExprLeft CShiftExpression CAdditiveExpression
+  | CShiftExpressionLeft CShiftExpression CAdditiveExpression
   -- CShiftExpression >> CAdditiveExpression
-  | CShiftExprRight CShiftExpression CAdditiveExpression
+  | CShiftExpressionRight CShiftExpression CAdditiveExpression
 
 data CRelationalExpression
   -- CShiftExpression
-  = CRelationalExprEmpty CShiftExpression
+  = CRelationalExpressionEmpty CShiftExpression
   -- CRelationalExpression < CShiftExpression
-  | CRelationalExprLT CRelationalExpression CShiftExpression
+  | CRelationalExpressionLT CRelationalExpression CShiftExpression
   -- CRelationalExpression > CShiftExpression
-  | CRelationalExprGT CRelationalExpression CShiftExpression
+  | CRelationalExpressionGT CRelationalExpression CShiftExpression
   -- CRelationalExpression <= CShiftExpression
-  | CRelationalExprLTE CRelationalExpression CShiftExpression
+  | CRelationalExpressionLTE CRelationalExpression CShiftExpression
   -- CRelationalExpression >= CShiftExpression
-  | CRelationalExprGTE CRelationalExpression CShiftExpression
+  | CRelationalExpressionGTE CRelationalExpression CShiftExpression
 
 data CEqualityExpression
   -- CRelationalExpression
-  = CEqExprEmpty CRelationalExpression
+  = CEqualityExpressionEmpty CRelationalExpression
   -- CEqualityExpression == CRelationalExpression
-  | CEqExprEquals CEqualityExpression CRelationalExpression
+  | CEqualityExpressionEQ CEqualityExpression CRelationalExpression
   -- CEqualityExpression != CRelationalExpression
-  | CEqExprNotEquals CEqualityExpression CRelationalExpression
+  | CEqualityExpressionNEQ CEqualityExpression CRelationalExpression
 
 data CAndExpression
   -- CEqualityExpression
-  = CAndExprEmpty CEqualityExpression
+  = CAndExpressionEmpty CEqualityExpression
   -- CAndExpression & CEqualityExpression
-  | CAndExpr CAndExpression CEqualityExpression
+  | CAndExpression CAndExpression CEqualityExpression
 
 data CExclusiveOrExpression
   -- CAndExpression
-  = CXorExprEmpty CAndExpression
+  = CExclusiveOrExpressionEmpty CAndExpression
   -- CExclusiveOrExpression ^ CAndExpression
-  | CXorExpr CExclusiveOrExpression CAndExpression
+  | CExclusiveOrExpression CExclusiveOrExpression CAndExpression
 
 data CInclusiveOrExpression
   -- CExclusiveOrExpression
-  = COrExprEmpty CExclusiveOrExpression
+  = COrExpressionEmpty CExclusiveOrExpression
   -- CInclusiveOrExpression | CExclusiveOrExpression
-  | COrExpr CInclusiveOrExpression CExclusiveOrExpression
+  | COrExpression CInclusiveOrExpression CExclusiveOrExpression
 
 data CLogicalAndExpression
   -- CInclusiveOrExpression
-  = CLogicalAndExprEmpty CInclusiveOrExpression
+  = CLogicalAndExpressionEmpty CInclusiveOrExpression
   -- CLogicalAndExpression && CInclusiveOrExpression
-  | CLogicalAndExpr CLogicalAndExpression CInclusiveOrExpression
+  | CLogicalAndExpression CLogicalAndExpression CInclusiveOrExpression
 
 data CLogicalOrExpression
   -- CLogicalAndExpression
-  = CLogicalOrExprEmpty CLogicalAndExpression
+  = CLogicalOrExpressionEmpty CLogicalAndExpression
   -- CLogicalOrExpression || CLogicalAndExpression
-  | CLogicalOrExpr CLogicalOrExpression CLogicalAndExpression
+  | CLogicalOrExpression CLogicalOrExpression CLogicalAndExpression
 
 data CConditionalExpression
   -- CLogicalOrExpression
-  = CConditionalExprEmpty CLogicalOrExpression
+  = CConditionalExpressionEmpty CLogicalOrExpression
   -- CLogicalOrExpression ? CExpression : CConditionalExpression
-  | CConditionalExpr CLogicalOrExpression CExpression CConditionalExpression
+  | CConditionalExpression
+      CLogicalOrExpression
+      CExpression
+      CConditionalExpression
 
 data CAssignmentExpression
   -- CConditionalExpression
-  = CAssignmentExprEmpty CConditionalExpression
+  = CAssignmentExpressionEmpty CConditionalExpression
   -- CUnaryExpression CAssignmentOperator CAssignmentExpression
-  | CAssignmentExpr CUnaryExpression CAssignmentOperator CAssignmentExpression
+  | CAssignmentExpression
+      CUnaryExpression
+      CAssignmentOperator
+      CAssignmentExpression
 
 data CAssignmentOperator
-  = CAssignOpAssign             -- =
-  | CAssignOpMultiply           -- *=
-  | CAssignOpDivide             -- /=
-  | CAssignOpModulo             -- %=
-  | CAssignOpAdd                -- +=
-  | CAssignOpSubtract           -- -=
-  | CAssignOpShiftLeft          -- <<=
-  | CAssignOpShiftRight         -- >>=
-  | CAssignOpAnd                -- &=
-  | CAssignOpXor                -- ^=
-  | CAssignOpOr                 -- |=
+  = CAssignmentOperatorAssign   -- =
+  | CAssignmentOperatorMul      -- *=
+  | CAssignmentOperatorDiv      -- /=
+  | CAssignmentOperatorMod      -- %=
+  | CAssignmentOperatorAdd      -- +=
+  | CAssignmentOperatorSub      -- -=
+  | CAssignmentOperatorLShift   -- <<=
+  | CAssignmentOperatorRShfit   -- >>=
+  | CAssignmentOperatorAnd      -- &=
+  | CAssignmentOperatorXor      -- ^=
+  | CAssignmentOperatorOr       -- |=
 
 data CExpression
   -- CAssignmentExpression
-  = CExprEmpty CAssignmentExpression
+  = CExpressionEmpty CAssignmentExpression
   -- CExpression , CAssignmentExpression
-  | CExpr CExpression CAssignmentExpression
+  | CExpression CExpression CAssignmentExpression
 
-data CConstantExpression
-  -- CConditionalExpression
-  = CConstantExprEmpty CConditionalExpression
+-- CConditionalExpression
+newtype CConstantExpression = CConstantExpression CConditionalExpression
 
 data CDeclaration
   -- CDeclarationSpecifiers CInitDeclaratorList (optional)
-  = CDeclaration CDeclarationSpecifiers CInitDeclaratorList
+      =
+  CDeclaration CDeclarationSpecifiers CInitDeclaratorList
 
 data CDeclarationSpecifiers
   -- CStorageClassSpecifier CDeclarationSpecifiers (optional)
-  = CDeclarationSpecifiersStorageCLass CStorageClassSpecifier CDeclarationSpecifiers
+  = CDeclarationSpecifiersStorageCLass
+      CStorageClassSpecifier
+      CDeclarationSpecifiers
   -- CTypeSpecifier CDeclarationSpecifiers (optional)
   | CDeclarationSpecifiersTypeSpecifier CTypeSpecifier CDeclarationSpecifiers
   -- CTypeQualifier CDeclarationSpecifiers (optional)
@@ -210,58 +213,65 @@ data CInitDeclarator
   | CInitDeclarator CDeclarator CInitializer
 
 data CStorageClassSpecifier
-  = CStorageClsSpecTypedef
-  | CStorageClsSpecExtern       -- extern
-  | CStorageClsSpecStatic       -- static
-  | CStorageClsSpecAuto         -- auto
-  | CStorageClsSpecRegister     -- register
+  = CStorageClassSpecifierTypedef
+  | CStorageClassSpecifierExtern    -- extern
+  | CStorageClassSpecifierStatic    -- static
+  | CStorageClassSpecifierAuto      -- auto
+  | CStorageClassSpecifierRegister  -- register
 
 data CTypeSpecifier
-  = CTypeSpecVoid               -- void
-  | CTypeSpecChar               -- char
-  | CTypeSpecShort              -- short
-  | CTypeSpecInt                -- int
-  | CTypeSpecLong               -- long
-  | CTypeSpecFloat              -- float
-  | CTypeSpecDouble             -- double
-  | CTypeSpecSigned             -- signed
-  | CTypeSpecUnsigned           -- unsigned
-  | CTypeSpecStructOrUnion CStructOrUnionSpecifier
-  | CTypeSpecEnum CEnumSpecifier
-  | CTypeSpecTypedef CTypedefName
+  = CTypeSpecifierVoid          -- void
+  | CTypeSpecifierChar          -- char
+  | CTypeSpecifierShort         -- short
+  | CTypeSpecifierInt           -- int
+  | CTypeSpecifierLong          -- long
+  | CTypeSpecifierFloat         -- float
+  | CTypeSpecifierDouble        -- double
+  | CTypeSpecifierSigned        -- signed
+  | CTypeSpecifierUnsigned      -- unsigned
+  -- CStructOrUnionSpecifier
+  | CTypeSpecifierStructOrUnion CStructOrUnionSpecifier
+  -- CEnumSpecifier
+  | CTypeSpecifierEnum CEnumSpecifier
+  -- CTypedefName
+  | CTypeSpecifierTypedef CTypedefName
 
 data CStructOrUnionSpecifier
   -- CStructOrUnion CIdentifier (optional) { CStructDeclarationList }
-  = CStructOrUnionSpecList CStructOrUnion CIdentifier CStructDeclarationList
+  = CStructOrUnionSpecifierList
+      CStructOrUnion
+      CIdentifier
+      CStructDeclarationList
   -- CStructOrUnion CIdentifier
-  | CStructOrUnionSpec CStructOrUnion CIdentifier
+  | CStructOrUnionSpecifier CStructOrUnion CIdentifier
 
 data CStructOrUnion
-  = CStruct                     -- struct
-  | CUnion                      -- union
+  = CStruct     -- struct
+  | CUnion      -- union
 
-data CStructDeclarationList     -- NOTE: different from CStructDeclaratorList
+data CStructDeclarationList -- NOTE: different from CStructDeclaratorList
   -- CStructDeclaration
   = CStructDeclarationListSingleton CStructDeclaration
   -- CStructDeclarationList CStructDeclaration
   | CStructDeclarationList CStructDeclarationList CStructDeclaration
 
-data CStructDeclaration         -- NOTE: different from CStructDeclarator
-  = CStructDeclaration CSpecifierQualifierList CStructDeclarationList
+data CStructDeclaration -- NOTE: different from CStructDeclarator
+      =
+  CStructDeclaration CSpecifierQualifierList CStructDeclarationList
 
 data CSpecifierQualifierList
   -- CTypeSpecifier CSpecifierQualifierList (optional)
-  = CSpecQualifierListSpecifier CTypeSpecifier CSpecifierQualifierList
+  = CSpecifierQualifierListSpecifier CTypeSpecifier CSpecifierQualifierList
   -- CTypeQualifier CSpecifierQualifierList (optional)
-  | CSpecQualifierListQualifier CTypeQualifier CSpecifierQualifierList
+  | CSpecifierQualifierListQualifier CTypeQualifier CSpecifierQualifierList
 
-data CStructDeclaratorList      -- NOTE: different from CStructDeclarationList
+data CStructDeclaratorList -- NOTE: different from CStructDeclarationList
   -- CStructDeclarator
   = CStructDeclaratorListSingleton CStructDeclarator
   -- CStructDeclaratorList CStructDeclarator
   | CStructDeclaratorList CStructDeclaratorList CStructDeclarator
 
-data CStructDeclarator          -- NOTE: different from CStructDeclaration
+data CStructDeclarator -- NOTE: different from CStructDeclaration
   -- CDeclarator
   = CStructDeclarator CDeclarator
   -- CDeclarator (optional) : CConstantExpression
@@ -269,13 +279,13 @@ data CStructDeclarator          -- NOTE: different from CStructDeclaration
 
 data CEnumSpecifier
   -- enum CIdentifier (optional) { CEnumeratorList }
-  = CEnumSpecList CIdentifier CEnumeratorList
+  = CEnumSpecifierList CIdentifier CEnumeratorList
   -- enum CIdentifier
-  | CEnumSpec CIdentifier
+  | CEnumSpecifier CIdentifier
 
 data CEnumeratorList
   -- CEnumerator
-  = CEnumListSingleton CEnumerator
+  = CEnumeratorListSingleton CEnumerator
   -- CEnumeratorList , CEnumerator
   | CEnumeratorList CEnumerator
 
@@ -285,7 +295,8 @@ data CEnumerator
   -- CEnumerationConstant = CConstantExpression
   | CEnumeratorAssign CEnumerationConstant CConstantExpression
 
-data CEnumerationConstant = CEnumerationConstant CIdentifier
+-- CIdentifier
+newtype CEnumerationConstant = CEnumerationConstant CIdentifier
 
 data CTypeQualifier
   = CTypeQualifierConst         -- const
@@ -293,13 +304,14 @@ data CTypeQualifier
 
 data CDeclarator
   -- CPointer (optional) CDirectDeclarator
-  = CDeclarator CPointer CDirectDeclarator
+      =
+  CDeclarator CPointer CDirectDeclarator
 
 data CDirectDeclarator
   -- CIdentifier
   = CDirectDeclaratorId CIdentifier
   -- ( CDeclarator )
-  | CDirectDeclaratorParenthesized CDeclarator
+  | CDirectDeclaratorParen CDeclarator
   -- CDirectDeclarator [ CConstantExpression (optional) ]
   | CDirectDeclarator CConstantExpression
   -- CDirectDeclarator ( CParameterTypeList )
@@ -321,29 +333,28 @@ data CTypeQualifierList
 
 data CParameterTypeList
   -- CParameterList
-  = CParamTypeList CParameterList
+  = CParameterTypeList CParameterList
   -- CParameterTypeList , ...
-  | CParamTypeListVarargs CParameterList
+  | CParameterTypeListVarargs CParameterList
 
 data CParameterList
   -- CParameterDeclaration
-  = CParamListSingleton CParameterDeclaration
+  = CParameterListSingleton CParameterDeclaration
   -- CParameterList CParameterDeclaration
-  | CParamList CParameterList CParameterDeclaration
+  | CParameterList CParameterList CParameterDeclaration
 
+-- CParameterList , CParameterDeclaration
 data CParameterDeclaration
-  -- CParameterList , CParameterDeclaration
   = CParameterDeclaration CParameterList CParameterDeclaration
 
 data CIdentifierList
   -- CIdentifier
-  = CIdListSingleton CIdentifier
+  = CIdentifierListSingleton CIdentifier
   -- CIdentifierList , CIdentifier
-  | CidList CIdentifierList CIdentifier
+  | CidentifierList CIdentifierList CIdentifier
 
-data CTypeName
-  -- CSpecifierQualifierList CAbstractDeclarator (optional)
-  = CTypeName CSpecifierQualifierList CAbstractDeclarator
+-- CSpecifierQualifierList CAbstractDeclarator (optional)
+data CTypeName = CTypeName CSpecifierQualifierList CAbstractDeclarator
 
 data CAbstractDeclarator
   -- CPointer
@@ -355,11 +366,16 @@ data CDirectAbstractDeclarator
   -- ( CAbstractDeclarator )
   = CDirectAbstractDeclaratorParenthesized CAbstractDeclarator
   -- CDirectAbstractDeclarator (optional) [ CConstantExpression (optional) ]
-  | CDirectAbstractDeclaratorConstant CDirectAbstractDeclarator CConstantExpression
+  | CDirectAbstractDeclaratorConstant
+      CDirectAbstractDeclarator
+      CConstantExpression
   -- CDirectAbstractDeclarator (optional) ( CParamTypeList (optional) )
-  | CDirectAbstractDeclaratorParamList CDirectAbstractDeclarator CParameterTypeList
+  | CDirectAbstractDeclaratorParamList
+      CDirectAbstractDeclarator
+      CParameterTypeList
 
-data CTypedefName = CTypedefName CIdentifier
+-- CIdentifier
+newtype CTypedefName = CTypedefName CIdentifier
 
 data CInitializer
   -- CAssignmentExpression
@@ -397,9 +413,8 @@ data CLabaledStatement
   -- default : CStatement
   | CLabaledStatementDefault CStatement
 
-data CCompoundStatement
-  -- { CDeclarationList (optional) CStatementList (optional) }
-  = CCompoundStatement CDeclarationList CStatementList
+-- { CDeclarationList (optional) CStatementList (optional) }
+data CCompoundStatement = CCompoundStatement CDeclarationList CStatementList
 
 data CDeclarationList
   -- CDeclaration
@@ -413,9 +428,8 @@ data CStatementList
   -- CStatementList CStatement
   | CStatementList CStatementList CStatement
 
-data CExpressionStatement
-  -- CExpression (optional) ;
-  = CExpressionStatement CExpression
+-- CExpression (optional) ;
+newtype CExpressionStatement = CExpressionStatement CExpression
 
 data CSelectionStatement
   -- if ( CExpression ) CStatement
@@ -427,11 +441,12 @@ data CSelectionStatement
 
 data CIterationStatement
   -- while ( CExpression ) CStatement
-  = CIterStatementWhile CExpression CStatement
+  = CIterationStatementWhile CExpression CStatement
   -- do CStatement while ( CExpression ) ;
-  | CIterStatementDoWhile CStatement CExpression
-  -- for ( CExpression (optional) ; CExpression (optional) ; CExpression (optional) ) CStatement
-  | CIterStatementFor CExpression CExpression CExpression CStatement
+  | CIterationStatementDoWhile CStatement CExpression
+  -- for ( CExpression (optional) ; CExpression (optional) ;
+  -- CExpression (optional) ) CStatement
+  | CIterationStatementFor CExpression CExpression CExpression CStatement
 
 data CJumpStatement
   -- goto CIdentifier ;
@@ -460,5 +475,3 @@ data CFunctionDefinition
   = CFunctionDefinitionSpecifiers CDeclarationSpecifiers CDeclarator
   -- CDeclarationList (optional) CCompoundStatement
   | CFunctionDefinitionList CDeclarationList CCompoundStatement
-
-
