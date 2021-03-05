@@ -32,7 +32,9 @@ data CPostfixExpression'
   -- [ CExpression ] CPostfixExpression'
   | CPostfixExpression'Indexed CExpression CPostfixExpression'
   -- ( CArgumentExpressionList (optional) ) CPostfixExpression'
-  | CPostfixExpression'ArgList CArgumentExpressionList CPostfixExpression'
+  | CPostfixExpression'ArgList
+      (Maybe CArgumentExpressionList)
+      CPostfixExpression'
   -- . CIdentifier CPostfixExpression'
   | CPostfixExpression'StructField CIdentifier CPostfixExpression'
   -- -> CIdentifier CPostfixExpression'
@@ -235,17 +237,22 @@ data CExpression
 newtype CConstantExpression = CConstantExpression CConditionalExpression
 
 -- CDeclarationSpecifiers CInitDeclaratorList (optional)
-data CDeclaration = CDeclaration CDeclarationSpecifiers CInitDeclaratorList
+data CDeclaration =
+  CDeclaration CDeclarationSpecifiers (Maybe CInitDeclaratorList)
 
 data CDeclarationSpecifiers
   -- CStorageClassSpecifier CDeclarationSpecifiers (optional)
   = CDeclarationSpecifiersStorageCLass
       CStorageClassSpecifier
-      CDeclarationSpecifiers
+      (Maybe CDeclarationSpecifiers)
   -- CTypeSpecifier CDeclarationSpecifiers (optional)
-  | CDeclarationSpecifiersTypeSpecifier CTypeSpecifier CDeclarationSpecifiers
+  | CDeclarationSpecifiersTypeSpecifier
+      CTypeSpecifier
+      (Maybe CDeclarationSpecifiers)
   -- CTypeQualifier CDeclarationSpecifiers (optional)
-  | CDeclarationSpecifiersTypeQualifier CTypeQualifier CDeclarationSpecifiers
+  | CDeclarationSpecifiersTypeQualifier
+      CTypeQualifier
+      (Maybe CDeclarationSpecifiers)
 
 -- CInitDeclarator CInitDeclaratorList'
 data CInitDeclaratorList =
@@ -290,9 +297,7 @@ data CTypeSpecifier
 data CStructOrUnionSpecifier
   -- CStructOrUnion CIdentifier (optional) { CStructDeclarationList }
   = CStructOrUnionSpecifierList
-      CStructOrUnion
-      CIdentifier
-      CStructDeclarationList
+      CStructOrUnion (Maybe CIdentifier) CStructDeclarationList
   -- CStructOrUnion CIdentifier
   | CStructOrUnionSpecifier CStructOrUnion CIdentifier
 
@@ -314,9 +319,11 @@ data CStructDeclaration =
 
 data CSpecifierQualifierList
   -- CTypeSpecifier CSpecifierQualifierList (optional)
-  = CSpecifierQualifierListSpecifier CTypeSpecifier CSpecifierQualifierList
+  = CSpecifierQualifierListSpecifier
+      CTypeSpecifier (Maybe CSpecifierQualifierList)
   -- CTypeQualifier CSpecifierQualifierList (optional)
-  | CSpecifierQualifierListQualifier CTypeQualifier CSpecifierQualifierList
+  | CSpecifierQualifierListQualifier
+      CTypeQualifier (Maybe CSpecifierQualifierList)
 
 -- NOTE: different from CStructDeclarationList
 -- CStructDeclarator CStructDeclaratorList'
@@ -333,11 +340,11 @@ data CStructDeclarator -- NOTE: different from CStructDeclaration
   -- CDeclarator
   = CStructDeclarator CDeclarator
   -- CDeclarator (optional) : CConstantExpression
-  | CStructDeclaratorInit CDeclarator CConstantExpression
+  | CStructDeclaratorInit (Maybe CDeclarator) CConstantExpression
 
 data CEnumSpecifier
   -- enum CIdentifier (optional) { CEnumeratorList }
-  = CEnumSpecifierList CIdentifier CEnumeratorList
+  = CEnumSpecifierList (Maybe CIdentifier) CEnumeratorList
   -- enum CIdentifier
   | CEnumSpecifier CIdentifier
 
@@ -364,7 +371,7 @@ data CTypeQualifier
   | CTypeQualifierVolatile      -- volatile
 
 -- CPointer (optional) CDirectDeclarator
-data CDeclarator = CDeclarator CPointer CDirectDeclarator
+data CDeclarator = CDeclarator (Maybe CPointer) CDirectDeclarator
 
 data CDirectDeclarator
   -- CIdentifier CDirectDeclarator'
@@ -376,17 +383,17 @@ data CDirectDeclarator'
   -- empty
   = CDirectDeclarator'Empty
   -- [ CConstantExpression (optional) ] CDirectDeclarator'
-  | CDirectDeclarator'Indexed CConstantExpression CDirectDeclarator'
+  | CDirectDeclarator'Indexed (Maybe CConstantExpression) CDirectDeclarator'
   -- ( CParameterTypeList ) CDirectDeclarator'
   | CDirectDeclarator'ParamTypeList CParameterTypeList CDirectDeclarator'
   -- ( CIdentifierList (optional) ) CDirectDeclarator'
-  | CDirectDeclarator'IdLIst CIdentifierList CDirectDeclarator'
+  | CDirectDeclarator'IdLIst (Maybe CIdentifierList) CDirectDeclarator'
 
 data CPointer
   -- * CTypeQualifierList (optional)
-  = CPointerSingle CTypeQualifierList
+  = CPointerSingle (Maybe CTypeQualifierList)
   -- * CTypeQualifierList (optional) CPointer
-  | CPointerMulti CTypeQualifierList CPointer
+  | CPointerMulti (Maybe CTypeQualifierList) CPointer
 
 data CTypeQualifierList
   -- CTypeQualifier
@@ -414,7 +421,9 @@ data CParameterDeclaration
   -- CDeclarationSpecifiers CDeclarator
   = CParameterDeclaration CDeclarationSpecifiers CDeclarator
   -- CDeclarationSpecifiers CAbstractDeclarator (optional)
-  | CParameterDeclarationAbstract CDeclarationSpecifiers CAbstractDeclarator
+  | CParameterDeclarationAbstract
+      CDeclarationSpecifiers
+      (Maybe CAbstractDeclarator)
 
 -- CIdentifier CIdentifierList'
 data CIdentifierList = CIdentifierList CIdentifier CIdentifierList'
@@ -426,13 +435,13 @@ data CIdentifierList'
   | CIdentifierList' CIdentifier CIdentifierList'
 
 -- CSpecifierQualifierList CAbstractDeclarator (optional)
-data CTypeName = CTypeName CSpecifierQualifierList CAbstractDeclarator
+data CTypeName = CTypeName CSpecifierQualifierList (Maybe CAbstractDeclarator)
 
 data CAbstractDeclarator
   -- CPointer
   = CAbstractDeclaratorPointer CPointer
   -- CPointer (optional) CDirectAbstractDeclarator
-  | CAbstractDeclaratorDirect CPointer CDirectAbstractDeclarator
+  | CAbstractDeclaratorDirect (Maybe CPointer) CDirectAbstractDeclarator
 
 -- TODO: Figure out how to implement this
 data CDirectAbstractDeclarator
@@ -440,12 +449,12 @@ data CDirectAbstractDeclarator
   = CDirectAbstractDeclaratorParenthesized CAbstractDeclarator
   -- CDirectAbstractDeclarator (optional) [ CConstantExpression (optional) ]
   | CDirectAbstractDeclaratorConstant
-      CDirectAbstractDeclarator
-      CConstantExpression
+      (Maybe CDirectAbstractDeclarator)
+      (Maybe CConstantExpression)
   -- CDirectAbstractDeclarator (optional) ( CParamTypeList (optional) )
   | CDirectAbstractDeclaratorParamList
-      CDirectAbstractDeclarator
-      CParameterTypeList
+      (Maybe CDirectAbstractDeclarator)
+      (Maybe CParameterTypeList)
 
 -- CIdentifier
 newtype CTypedefName = CTypedefName CIdentifier
@@ -490,7 +499,8 @@ data CLabaledStatement
   | CLabaledStatementDefault CStatement
 
 -- { CDeclarationList (optional) CStatementList (optional) }
-data CCompoundStatement = CCompoundStatement CDeclarationList CStatementList
+data CCompoundStatement =
+  CCompoundStatement (Maybe CDeclarationList) (Maybe CStatementList)
 
 data CDeclarationList
   -- CDeclaration
@@ -505,7 +515,7 @@ data CStatementList
   | CStatementList CStatement CStatementList
 
 -- CExpression (optional) ;
-newtype CExpressionStatement = CExpressionStatement CExpression
+newtype CExpressionStatement = CExpressionStatement (Maybe CExpression)
 
 data CSelectionStatement
   -- if ( CExpression ) CStatement
@@ -522,7 +532,8 @@ data CIterationStatement
   | CIterationStatementDoWhile CStatement CExpression
   -- for ( CExpression (optional) ; CExpression (optional) ;
   -- CExpression (optional) ) CStatement
-  | CIterationStatementFor CExpression CExpression CExpression CStatement
+  | CIterationStatementFor
+      (Maybe CExpression) (Maybe CExpression) (Maybe CExpression) CStatement
 
 data CJumpStatement
   -- goto CIdentifier ;
@@ -532,7 +543,7 @@ data CJumpStatement
   -- break ;
   | CJumpStatementBreak
   -- return CExpression (optional) ;
-  | CJumpStatementReturn CExpression
+  | CJumpStatementReturn (Maybe CExpression)
 
 data CTranslationUnit
   -- CExternalDeclaration
@@ -548,6 +559,6 @@ data CExternalDeclaration
 
 data CFunctionDefinition
   -- CDeclarationSpecifiers (optional) CDeclarator
-  = CFunctionDefinitionSpecifiers CDeclarationSpecifiers CDeclarator
+  = CFunctionDefinitionSpecifiers (Maybe CDeclarationSpecifiers) CDeclarator
   -- CDeclarationList (optional) CCompoundStatement
-  | CFunctionDefinitionList CDeclarationList CCompoundStatement
+  | CFunctionDefinitionList (Maybe CDeclarationList) CCompoundStatement
