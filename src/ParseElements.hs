@@ -55,13 +55,15 @@ data CArgumentExpressionList'
   -- . CAssignmentExpression CArgumentExpressionList'
   | CArgumentExpressionList' CAssignmentExpression CArgumentExpressionList'
 
+-- TODO: Avoid infinite recursion here. CUnaryExpression can derive
+--       CPostfixExpression which after many steps can derive CUnaryExpression.
 data CUnaryExpression
   -- CPostfixExpression
   = CUnaryExpressionSingleton CPostfixExpression
   -- ++ CUnaryExpression
-  | CUnaryExpressionIncr
+  | CUnaryExpressionIncr CUnaryExpression
   -- -- CUnaryExpression
-  | CUnaryExpressionDecr
+  | CUnaryExpressionDecr CUnaryExpression
   -- CUnaryOperator CCastExpression
   | CUnaryExpressionCast CUnaryOperator CCastExpression
   -- sizeof CUnaryExpression
@@ -493,8 +495,8 @@ data CInitializerList'
   | CInitializerList' CInitializer CInitializerList'
 
 data CStatement
-  -- CLabaledStatement
-  = CStatementLabeled CLabaledStatement
+  -- CLabeledStatement
+  = CStatementLabeled CLabeledStatement
   -- CCompoundStatement
   | CStatementCompound CCompoundStatement
   -- CExpressionStatement
@@ -506,13 +508,13 @@ data CStatement
   -- CJumpStatement
   | CStatementJump CJumpStatement
 
-data CLabaledStatement
+data CLabeledStatement
   -- CIdentifier : CStatement
-  = CLabaledStatementId CIdentifier CStatement
+  = CLabeledStatementId CIdentifier CStatement
   -- case CConstantExpression : CStatement
-  | CLabaledStatementCase CConstantExpression CStatement
+  | CLabeledStatementCase CConstantExpression CStatement
   -- default : CStatement
-  | CLabaledStatementDefault CStatement
+  | CLabeledStatementDefault CStatement
 
 -- { CDeclarationList (optional) CStatementList (optional) }
 data CCompoundStatement =

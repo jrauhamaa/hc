@@ -43,56 +43,56 @@ data CLexeme
   | LVolatile
   | LWhile
   -- parentheses
-  | LParenthesisOpen -- (
-  | LParenthesisClose -- )
-  | LBracketOpen -- [
-  | LBracketClose -- ]
-  | LBraceOpen -- {
-  | LBraceClose -- }
+  | LParenthesisOpen        -- (
+  | LParenthesisClose       -- )
+  | LBracketOpen            -- [
+  | LBracketClose           -- ]
+  | LBraceOpen              -- {
+  | LBraceClose             -- }
   -- comparison
-  | LNot -- !
-  | LEquals -- ==
-  | LNotEquals -- !=
-  | LLT -- <
-  | LLTE -- <=
-  | LGT -- >
-  | LGTE -- >=
-  | LAnd -- &&
-  | LOr -- ||
+  | LNot                    -- !
+  | LEquals                 -- ==
+  | LNotEquals              -- !=
+  | LLT                     -- <
+  | LLTE                    -- <=
+  | LGT                     -- >
+  | LGTE                    -- >=
+  | LAnd                    -- &&
+  | LOr                     -- ||
   -- operators
-  | LModulo -- %
-  | LStar -- * (pointer or multiplication)
-  | LPlus -- +
-  | LMinus -- -
-  | LDivision -- /
-  | LAmp -- (bitwise and & address of variable)
-  | LBitwiseOr -- |
-  | LBitShiftLeft -- <<
-  | LBitShiftRight -- >>
-  | LBitwiseXor -- ^
-  | LBitwiseNot -- ~
+  | LModulo                 -- %
+  | LStar                   -- * (pointer or multiplication)
+  | LPlus                   -- +
+  | LMinus                  -- -
+  | LDivision               -- /
+  | LAmp                    -- (bitwise and & address of variable)
+  | LBitwiseOr              -- |
+  | LBitShiftLeft           -- <<
+  | LBitShiftRight          -- >>
+  | LBitwiseXor             -- ^
+  | LBitwiseNot             -- ~
   -- assign opeartors
-  | LModuloAssign -- %=
-  | LMultiplicationAssign -- *=
-  | LPlusAssign -- +=
-  | LMinusAssign -- -=
-  | LDivisionAssign -- /=
-  | LBitwiseAndAssign -- &=
-  | LBitwiseOrAssign -- |=
-  | LBitShiftLeftAssign -- <<=
-  | LBitShiftRightAssign -- >>=
-  | LBitwiseXorAssign -- ^=
-  | LIncrement -- ++
-  | LDecrement -- --
+  | LModuloAssign           -- %=
+  | LMultiplicationAssign   -- *=
+  | LPlusAssign             -- +=
+  | LMinusAssign            -- -=
+  | LDivisionAssign         -- /=
+  | LBitwiseAndAssign       -- &=
+  | LBitwiseOrAssign        -- |=
+  | LBitShiftLeftAssign     -- <<=
+  | LBitShiftRightAssign    -- >>=
+  | LBitwiseXorAssign       -- ^=
+  | LIncrement              -- ++
+  | LDecrement              -- --
   -- other symbols
-  | LComma -- ,
-  | LArrow -- -> (for structs)
-  | LDot -- . (for structs)
-  | LVarargs -- ... (for functions with variable number of args)
-  | LColon -- : (switch case & goto labels & ternary)
-  | LSemiColon -- ;
-  | LAssign -- =
-  | LTernary -- ?
+  | LComma                  -- ,
+  | LArrow                  -- -> (for structs)
+  | LDot                    -- . (for structs)
+  | LVarargs                -- ... (for functions with variable number of args)
+  | LColon                  -- : (switch case & goto labels & ternary)
+  | LSemiColon              -- ;
+  | LAssign                 -- =
+  | LTernary                -- ?
   -- literals
   | LCharLiteral Char
   | LFloatLiteral Double
