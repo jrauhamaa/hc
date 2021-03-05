@@ -1,6 +1,7 @@
 module ParseElements where
 
-newtype CIdentifier = CIdentifier String
+newtype CIdentifier =
+  CIdentifier String
 
 data CConstant
   -- float literal
@@ -109,7 +110,8 @@ data CAdditiveExpression'
   | CAdditiveExpression'Minus CMultiplicativeExpression CAdditiveExpression'
 
 -- CAdditiveExpression CShiftExpression'
-data CShiftExpression = CShiftExpression CAdditiveExpression CShiftExpression'
+data CShiftExpression =
+  CShiftExpression CAdditiveExpression CShiftExpression'
 
 data CShiftExpression'
   -- empty
@@ -148,7 +150,8 @@ data CEqualityExpression'
   | CEqualityExpression'NEQ
 
 -- CEqualityExpression CAndExpression'
-data CAndExpression = CAndExpression CEqualityExpression CAndExpression'
+data CAndExpression =
+  CAndExpression CEqualityExpression CAndExpression'
 
 data CAndExpression'
   -- empty
@@ -234,7 +237,8 @@ data CExpression
   | CExpression CExpression CAssignmentExpression
 
 -- CConditionalExpression
-newtype CConstantExpression = CConstantExpression CConditionalExpression
+newtype CConstantExpression =
+  CConstantExpression CConditionalExpression
 
 -- CDeclarationSpecifiers CInitDeclaratorList (optional)
 data CDeclaration =
@@ -297,7 +301,9 @@ data CTypeSpecifier
 data CStructOrUnionSpecifier
   -- CStructOrUnion CIdentifier (optional) { CStructDeclarationList }
   = CStructOrUnionSpecifierList
-      CStructOrUnion (Maybe CIdentifier) CStructDeclarationList
+      CStructOrUnion
+      (Maybe CIdentifier)
+      CStructDeclarationList
   -- CStructOrUnion CIdentifier
   | CStructOrUnionSpecifier CStructOrUnion CIdentifier
 
@@ -320,10 +326,12 @@ data CStructDeclaration =
 data CSpecifierQualifierList
   -- CTypeSpecifier CSpecifierQualifierList (optional)
   = CSpecifierQualifierListSpecifier
-      CTypeSpecifier (Maybe CSpecifierQualifierList)
+      CTypeSpecifier
+      (Maybe CSpecifierQualifierList)
   -- CTypeQualifier CSpecifierQualifierList (optional)
   | CSpecifierQualifierListQualifier
-      CTypeQualifier (Maybe CSpecifierQualifierList)
+      CTypeQualifier
+      (Maybe CSpecifierQualifierList)
 
 -- NOTE: different from CStructDeclarationList
 -- CStructDeclarator CStructDeclaratorList'
@@ -349,7 +357,8 @@ data CEnumSpecifier
   | CEnumSpecifier CIdentifier
 
 -- CEnumerator CEnumeratorList'
-data CEnumeratorList = CEnumeratorList CEnumerator CEnumeratorList'
+data CEnumeratorList =
+  CEnumeratorList CEnumerator CEnumeratorList'
 
 data CEnumeratorList'
   -- empty
@@ -364,14 +373,16 @@ data CEnumerator
   | CEnumeratorAssign CEnumerationConstant CConstantExpression
 
 -- CIdentifier
-newtype CEnumerationConstant = CEnumerationConstant CIdentifier
+newtype CEnumerationConstant =
+  CEnumerationConstant CIdentifier
 
 data CTypeQualifier
   = CTypeQualifierConst         -- const
   | CTypeQualifierVolatile      -- volatile
 
 -- CPointer (optional) CDirectDeclarator
-data CDeclarator = CDeclarator (Maybe CPointer) CDirectDeclarator
+data CDeclarator =
+  CDeclarator (Maybe CPointer) CDirectDeclarator
 
 data CDirectDeclarator
   -- CIdentifier CDirectDeclarator'
@@ -408,7 +419,8 @@ data CParameterTypeList
   | CParameterTypeListVarargs CParameterList
 
 -- CParameterDeclaration CParameterList'
-data CParameterList = CParameterList CParameterDeclaration CParameterList'
+data CParameterList =
+  CParameterList CParameterDeclaration CParameterList'
 
 data CParameterList'
   -- empty
@@ -426,7 +438,8 @@ data CParameterDeclaration
       (Maybe CAbstractDeclarator)
 
 -- CIdentifier CIdentifierList'
-data CIdentifierList = CIdentifierList CIdentifier CIdentifierList'
+data CIdentifierList =
+  CIdentifierList CIdentifier CIdentifierList'
 
 data CIdentifierList'
   -- empty
@@ -435,7 +448,8 @@ data CIdentifierList'
   | CIdentifierList' CIdentifier CIdentifierList'
 
 -- CSpecifierQualifierList CAbstractDeclarator (optional)
-data CTypeName = CTypeName CSpecifierQualifierList (Maybe CAbstractDeclarator)
+data CTypeName =
+  CTypeName CSpecifierQualifierList (Maybe CAbstractDeclarator)
 
 data CAbstractDeclarator
   -- CPointer
@@ -457,7 +471,8 @@ data CDirectAbstractDeclarator
       (Maybe CParameterTypeList)
 
 -- CIdentifier
-newtype CTypedefName = CTypedefName CIdentifier
+newtype CTypedefName =
+  CTypedefName CIdentifier
 
 data CInitializer
   -- CAssignmentExpression
@@ -468,7 +483,8 @@ data CInitializer
   | CInitializerBracketListComma CInitializerList
 
 -- CInitializer CInitializerList'
-data CInitializerList = CInitializerList CInitializer CInitializerList'
+data CInitializerList =
+  CInitializerList CInitializer CInitializerList'
 
 data CInitializerList'
   -- empty
@@ -515,7 +531,8 @@ data CStatementList
   | CStatementList CStatement CStatementList
 
 -- CExpression (optional) ;
-newtype CExpressionStatement = CExpressionStatement (Maybe CExpression)
+newtype CExpressionStatement =
+  CExpressionStatement (Maybe CExpression)
 
 data CSelectionStatement
   -- if ( CExpression ) CStatement
@@ -533,7 +550,10 @@ data CIterationStatement
   -- for ( CExpression (optional) ; CExpression (optional) ;
   -- CExpression (optional) ) CStatement
   | CIterationStatementFor
-      (Maybe CExpression) (Maybe CExpression) (Maybe CExpression) CStatement
+      (Maybe CExpression)
+      (Maybe CExpression)
+      (Maybe CExpression)
+      CStatement
 
 data CJumpStatement
   -- goto CIdentifier ;
