@@ -4,6 +4,7 @@ module Scanner
   , scanLexeme
   , scanInput
   , ScanElement
+  , Coordinates
   ) where
 
 import Control.Applicative ((<|>))
@@ -25,7 +26,7 @@ data Scanner =
     , state :: [S.Set Int]
     }
 
-type ScanElement = (CLexeme, Coordinates)
+type ScanElement = (Coordinates, CLexeme)
 
 type Row = Int
 
@@ -47,7 +48,7 @@ fromSpec spec = getScanner <$> sequenceA regexes
 
 -- add row & col information to scan result
 getScanFunction :: (String -> CLexeme) -> String -> Coordinates -> ScanElement
-getScanFunction scanf s (oldRow, oldCol) = (scanf s, (nextRow, nextCol))
+getScanFunction scanf s (oldRow, oldCol) = ((nextRow, nextCol), scanf s)
   where
     nextRow = oldRow + (length . filter (== '\n') $ s)
     nextCol =
@@ -87,7 +88,7 @@ scanLexeme scanner (inputChar:unscanned) scanned (oldRow, oldCol) =
 scanInput :: Scanner -> String -> Coordinates -> Maybe [ScanElement]
 scanInput _ "" _ = Just []
 scanInput scanner input (row, col) = do
-  (unScanned, (lexeme, (newRow, newCol))) <-
+  (unScanned, ((newRow, newCol), lexeme)) <-
     scanLexeme scanner input "" (row, col)
   rest <- scanInput scanner unScanned (newRow, newCol)
-  return ((lexeme, (row, col)) : rest)
+  return (((row, col), lexeme) : rest)
