@@ -47,6 +47,17 @@ instance Applicative Parser where
       (input'', pa) <- runParser p2 input'
       return (input'', pab <*> pa)
 
+-- CTranslationUnit is the root element in the grammar
+cParser :: Parser CTranslationUnit
+cParser =
+  Parser $ \input ->
+    case (runParser cTranslationUnitP) input of
+      e@(Left _) -> e
+      r@(Right ([], _)) -> r
+      r@(Right ((notParsed:_), _)) -> r
+      --  Left $
+      --  ParseError (fst $ notParsed) "Parsing terminated prematurely"
+
 -----------
 -- UTILS --
 -----------
@@ -653,9 +664,33 @@ cAbstractDeclaratorP =
     , CAbstractDeclaratorPointer <$> cPointerP
     ]
 
--- TODO: Figure out how to implement this
 cDirectAbstractDeclaratorP :: Parser CDirectAbstractDeclarator
-cDirectAbstractDeclaratorP = undefined
+cDirectAbstractDeclaratorP =
+  parserUnion
+    [ CDirectAbstractDeclaratorParens <$>
+      (singleP LParenthesisOpen *> cAbstractDeclaratorP <*
+       singleP LParenthesisClose) <*>
+      cDirectAbstractDeclaratorP'
+    , CDirectAbstractDeclaratorConst <$>
+      (singleP LBracketOpen *> optionalP cConstantExpressionP <*
+       singleP LBracketClose) <*>
+      cDirectAbstractDeclaratorP'
+    , CDirectAbstractDeclaratorParams <$>
+      (singleP LParenthesisOpen *> optionalP cParameterTypeListP <*
+       singleP LParenthesisClose) <*>
+      cDirectAbstractDeclaratorP'
+    ]
+
+cDirectAbstractDeclaratorP' :: Parser CDirectAbstractDeclarator'
+cDirectAbstractDeclaratorP' =
+  parserUnion
+    [ CDirectAbstractDeclarator'Const <$>
+      (singleP LBracketOpen *> optionalP cConstantExpressionP <*
+       singleP LBracketClose)
+    , CDirectAbstractDeclarator'Params <$>
+      (singleP LParenthesisOpen *> optionalP cParameterTypeListP <*
+       singleP LParenthesisClose)
+    ]
 
 cTypedefNameP :: Parser CTypedefName
 cTypedefNameP = CTypedefName <$> cIdentifierP
