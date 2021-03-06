@@ -65,13 +65,14 @@ data CLexeme
   | LPlus                   -- +
   | LMinus                  -- -
   | LDivision               -- /
-  | LAmp                    -- (bitwise and & address of variable)
+  | LAmp                    -- & (bitwise and & address of variable)
   | LBitwiseOr              -- |
   | LBitShiftLeft           -- <<
   | LBitShiftRight          -- >>
   | LBitwiseXor             -- ^
   | LBitwiseNot             -- ~
   -- assign opeartors
+  | LAssign                 -- =
   | LModuloAssign           -- %=
   | LMultiplicationAssign   -- *=
   | LPlusAssign             -- +=
@@ -91,7 +92,6 @@ data CLexeme
   | LVarargs                -- ... (for functions with variable number of args)
   | LColon                  -- : (switch case & goto labels & ternary)
   | LSemiColon              -- ;
-  | LAssign                 -- =
   | LTernary                -- ?
   -- literals
   | LCharLiteral Char

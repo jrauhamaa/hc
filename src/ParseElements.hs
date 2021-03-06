@@ -55,8 +55,6 @@ data CArgumentExpressionList'
   -- . CAssignmentExpression CArgumentExpressionList'
   | CArgumentExpressionList' CAssignmentExpression CArgumentExpressionList'
 
--- TODO: Avoid infinite recursion here. CUnaryExpression can derive
---       CPostfixExpression which after many steps can derive CUnaryExpression.
 data CUnaryExpression
   -- CPostfixExpression
   = CUnaryExpressionSingleton CPostfixExpression
@@ -132,9 +130,9 @@ data CRelationalExpression'
   = CRelationalExpression'Empty
   -- < CShiftExpression CRelationalExpression'
   | CRelationalExpression'LT CShiftExpression CRelationalExpression'
-  -- > CShiftExpression CRelationalExpression'
-  | CRelationalExpression'LTE CShiftExpression CRelationalExpression'
   -- <= CShiftExpression CRelationalExpression'
+  | CRelationalExpression'LTE CShiftExpression CRelationalExpression'
+  -- > CShiftExpression CRelationalExpression'
   | CRelationalExpression'GT CShiftExpression CRelationalExpression'
   -- >= CShiftExpression CRelationalExpression'
   | CRelationalExpression'GTE CShiftExpression CRelationalExpression'
@@ -149,7 +147,7 @@ data CEqualityExpression'
   -- == CRelationalExpression CEqualityExpression'
   | CEqualityExpression'EQ CRelationalExpression CEqualityExpression'
   -- != CRelationalExpression CEqualityExpression'
-  | CEqualityExpression'NEQ
+  | CEqualityExpression'NEQ CRelationalExpression CEqualityExpression'
 
 -- CEqualityExpression CAndExpression'
 data CAndExpression =
@@ -232,11 +230,13 @@ data CAssignmentOperator
   | CAssignmentOperatorXor      -- ^=
   | CAssignmentOperatorOr       -- |=
 
-data CExpression
-  -- CAssignmentExpression
-  = CExpressionSingleton CAssignmentExpression
-  -- CExpression , CAssignmentExpression
-  | CExpression CExpression CAssignmentExpression
+-- CAssignmentExpression CExpression'
+data CExpression =
+  CExpression CAssignmentExpression CExpression'
+
+-- , CAssignmentExpression CExpression'
+data CExpression' =
+  CExpression' CAssignmentExpression CExpression'
 
 -- CConditionalExpression
 newtype CConstantExpression =
@@ -248,7 +248,7 @@ data CDeclaration =
 
 data CDeclarationSpecifiers
   -- CStorageClassSpecifier CDeclarationSpecifiers (optional)
-  = CDeclarationSpecifiersStorageCLass
+  = CDeclarationSpecifiersStorageClass
       CStorageClassSpecifier
       (Maybe CDeclarationSpecifiers)
   -- CTypeSpecifier CDeclarationSpecifiers (optional)
@@ -400,7 +400,7 @@ data CDirectDeclarator'
   -- ( CParameterTypeList ) CDirectDeclarator'
   | CDirectDeclarator'ParamTypeList CParameterTypeList CDirectDeclarator'
   -- ( CIdentifierList (optional) ) CDirectDeclarator'
-  | CDirectDeclarator'IdLIst (Maybe CIdentifierList) CDirectDeclarator'
+  | CDirectDeclarator'IdList (Maybe CIdentifierList) CDirectDeclarator'
 
 data CPointer
   -- * CTypeQualifierList (optional)
@@ -417,7 +417,7 @@ data CTypeQualifierList
 data CParameterTypeList
   -- CParameterList
   = CParameterTypeList CParameterList
-  -- CParameterTypeList , ...
+  -- CParameterList , ...
   | CParameterTypeListVarargs CParameterList
 
 -- CParameterDeclaration CParameterList'

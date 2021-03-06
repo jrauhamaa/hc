@@ -167,10 +167,10 @@ cPostfixExpressionP' =
       (singleP LIncrement *> cPostfixExpressionP')
     , CPostfixExpression'Decrement <$>
       (singleP LDecrement *> cPostfixExpressionP')
-    , CPostfixExpression'StructField <$>
-      (singleP LDot *> cIdentifierP) <*> cPostfixExpressionP'
-    , CPostfixExpression'StructPointer <$>
-      (singleP LArrow *> cIdentifierP) <*> cPostfixExpressionP'
+    , CPostfixExpression'StructField <$> (singleP LDot *> cIdentifierP) <*>
+      cPostfixExpressionP'
+    , CPostfixExpression'StructPointer <$> (singleP LArrow *> cIdentifierP) <*>
+      cPostfixExpressionP'
     , CPostfixExpression'ArgList <$>
       (singleP LParenthesisOpen *> optionalP cArgumentExpressionListP <*
        singleP LParenthesisClose) <*>
@@ -204,237 +204,596 @@ cUnaryExpressionP =
     , CUnaryExpressionIncr <$> (singleP LIncrement *> cUnaryExpressionP)
     , CUnaryExpressionDecr <$> (singleP LDecrement *> cUnaryExpressionP)
     , CUnaryExpressionCast <$> cUnaryOperatorP <*> cCastExpressionP
-    , CUnaryExpressionSingleton <$> cPostfixExpressionP -- TODO: infinite recursion?
+    , CUnaryExpressionSingleton <$> cPostfixExpressionP
     ]
 
 cUnaryOperatorP :: Parser CUnaryOperator
-cUnaryOperatorP = undefined
+cUnaryOperatorP =
+  parserUnion
+    [ const CUnaryOperatorAddress <$> singleP LAmp
+    , const CUnaryOperatorMultiply <$> singleP LStar
+    , const CUnaryOperatorPlus <$> singleP LPlus
+    , const CUnaryOperatorMinus <$> singleP LMinus
+    , const CUnaryOperatorBitwiseNot <$> singleP LBitwiseNot
+    , const CUnaryOperatorNot <$> singleP LNot
+    ]
 
 cCastExpressionP :: Parser CCastExpression
-cCastExpressionP = undefined
+cCastExpressionP =
+  parserUnion
+    [ CCastExpression <$>
+      (singleP LParenthesisOpen *> cTypeNameP <* singleP LParenthesisClose) <*>
+      cCastExpressionP
+    , CCastExpressionSingleton <$> cUnaryExpressionP
+    ]
 
 cMultiplicativeExpressionP :: Parser CMultiplicativeExpression
-cMultiplicativeExpressionP = undefined
+cMultiplicativeExpressionP =
+  CMultiplicativeExpression <$> cCastExpressionP <*> cMultiplicativeExpressionP'
 
 cMultiplicativeExpressionP' :: Parser CMultiplicativeExpression'
-cMultiplicativeExpressionP' = undefined
+cMultiplicativeExpressionP' =
+  parserUnion
+    [ CMultiplicativeExpression'Mul <$> (singleP LStar *> cCastExpressionP) <*>
+      cMultiplicativeExpressionP'
+    , CMultiplicativeExpression'Div <$> (singleP LDivision *> cCastExpressionP) <*>
+      cMultiplicativeExpressionP'
+    , CMultiplicativeExpression'Mod <$> (singleP LModulo *> cCastExpressionP) <*>
+      cMultiplicativeExpressionP'
+    , pure CMultiplicativeExpression'Empty
+    ]
 
 cAdditiveExpressionP :: Parser CAdditiveExpression
-cAdditiveExpressionP = undefined
+cAdditiveExpressionP =
+  CAdditiveExpression <$> cMultiplicativeExpressionP <*> cAdditiveExpressionP'
 
 cAdditiveExpressionP' :: Parser CAdditiveExpression'
-cAdditiveExpressionP' = undefined
+cAdditiveExpressionP' =
+  parserUnion
+    [ CAdditiveExpression'Plus <$> (singleP LPlus *> cMultiplicativeExpressionP) <*>
+      cAdditiveExpressionP'
+    , CAdditiveExpression'Minus <$>
+      (singleP LMinus *> cMultiplicativeExpressionP) <*>
+      cAdditiveExpressionP'
+    , pure CAdditiveExpression'Empty
+    ]
 
 cShiftExpressionP :: Parser CShiftExpression
-cShiftExpressionP = undefined
+cShiftExpressionP =
+  CShiftExpression <$> cAdditiveExpressionP <*> cShiftExpressionP'
 
 cShiftExpressionP' :: Parser CShiftExpression'
-cShiftExpressionP' = undefined
+cShiftExpressionP' =
+  parserUnion
+    [ CShiftExpression'Left <$> (singleP LBitShiftLeft *> cAdditiveExpressionP) <*>
+      cShiftExpressionP'
+    , CShiftExpression'Right <$>
+      (singleP LBitShiftRight *> cAdditiveExpressionP) <*>
+      cShiftExpressionP'
+    , pure CShiftExpression'Empty
+    ]
 
 cRelationalExpressionP :: Parser CRelationalExpression
-cRelationalExpressionP = undefined
+cRelationalExpressionP =
+  CRelationalExpression <$> cShiftExpressionP <*> cRelationalExpressionP'
 
 cRelationalExpressionP' :: Parser CRelationalExpression'
-cRelationalExpressionP' = undefined
+cRelationalExpressionP' =
+  parserUnion
+    [ CRelationalExpression'LT <$> (singleP LLT *> cShiftExpressionP) <*>
+      cRelationalExpressionP'
+    , CRelationalExpression'LTE <$> (singleP LLTE *> cShiftExpressionP) <*>
+      cRelationalExpressionP'
+    , CRelationalExpression'GT <$> (singleP LGT *> cShiftExpressionP) <*>
+      cRelationalExpressionP'
+    , CRelationalExpression'GTE <$> (singleP LGTE *> cShiftExpressionP) <*>
+      cRelationalExpressionP'
+    , pure CRelationalExpression'Empty
+    ]
 
 cEqualityExpressionP :: Parser CEqualityExpression
-cEqualityExpressionP = undefined
+cEqualityExpressionP =
+  CEqualityExpression <$> cRelationalExpressionP <*> cEqualityExpressionP'
 
 cEqualityExpressionP' :: Parser CEqualityExpression'
-cEqualityExpressionP' = undefined
+cEqualityExpressionP' =
+  parserUnion
+    [ CEqualityExpression'EQ <$> (singleP LEquals *> cRelationalExpressionP) <*>
+      cEqualityExpressionP'
+    , CEqualityExpression'NEQ <$> (singleP LNotEquals *> cRelationalExpressionP) <*>
+      cEqualityExpressionP'
+    , pure CEqualityExpression'Empty
+    ]
 
 cAndExpressionP :: Parser CAndExpression
-cAndExpressionP = undefined
+cAndExpressionP = CAndExpression <$> cEqualityExpressionP <*> cAndExpressionP'
 
 cAndExpressionP' :: Parser CAndExpression'
-cAndExpressionP' = undefined
+cAndExpressionP' =
+  parserUnion
+    [ CAndExpression' <$> (singleP LAmp *> cEqualityExpressionP) <*>
+      cAndExpressionP'
+    , pure CAndExpression'Empty
+    ]
 
 cExclusiveOrExpressionP :: Parser CExclusiveOrExpression
-cExclusiveOrExpressionP = undefined
+cExclusiveOrExpressionP =
+  CExclusiveOrExpression <$> cAndExpressionP <*> cExclusiveOrExpressionP'
 
 cExclusiveOrExpressionP' :: Parser CExclusiveOrExpression'
-cExclusiveOrExpressionP' = undefined
+cExclusiveOrExpressionP' =
+  parserUnion
+    [ CExclusiveOrExpression' <$> (singleP LBitwiseXor *> cAndExpressionP) <*>
+      cExclusiveOrExpressionP'
+    , pure CExclusiveOrExpression'Empty
+    ]
 
 cInclusiveOrExpressionP :: Parser CInclusiveOrExpression
-cInclusiveOrExpressionP = undefined
+cInclusiveOrExpressionP =
+  CInclusiveOrExpression <$> cExclusiveOrExpressionP <*>
+  cInclusiveOrExpressionP'
 
 cInclusiveOrExpressionP' :: Parser CInclusiveOrExpression'
-cInclusiveOrExpressionP' = undefined
+cInclusiveOrExpressionP' =
+  parserUnion
+    [ CInclusiveOrExpression' <$>
+      (singleP LBitwiseOr *> cExclusiveOrExpressionP) <*>
+      cInclusiveOrExpressionP'
+    , pure CInclusiveOrExpression'Empty
+    ]
 
 cLogicalAndExpressionP :: Parser CLogicalAndExpression
-cLogicalAndExpressionP = undefined
+cLogicalAndExpressionP =
+  CLogicalAndExpression <$> cInclusiveOrExpressionP <*> cLogicalAndExpressionP'
 
 cLogicalAndExpressionP' :: Parser CLogicalAndExpression'
-cLogicalAndExpressionP' = undefined
+cLogicalAndExpressionP' =
+  parserUnion
+    [ CLogicalAndExpression' <$> (singleP LAnd *> cInclusiveOrExpressionP) <*>
+      cLogicalAndExpressionP'
+    , pure CLogicalAndExpression'Empty
+    ]
 
 cLogicalOrExpressionP :: Parser CLogicalOrExpression
-cLogicalOrExpressionP = undefined
+cLogicalOrExpressionP =
+  CLogicalOrExpression <$> cLogicalAndExpressionP <*> cLogicalOrExpressionP'
 
 cLogicalOrExpressionP' :: Parser CLogicalOrExpression'
-cLogicalOrExpressionP' = undefined
+cLogicalOrExpressionP' =
+  parserUnion
+    [ CLogicalOrExpression' <$> (singleP LOr *> cLogicalAndExpressionP) <*>
+      cLogicalOrExpressionP'
+    , pure CLogicalOrExpression'Empty
+    ]
 
 cConditionalExpressionP :: Parser CConditionalExpression
-cConditionalExpressionP = undefined
+cConditionalExpressionP =
+  parserUnion
+    [ CConditionalExpression <$> cLogicalOrExpressionP <*>
+      (singleP LTernary *> cExpressionP <* singleP LColon) <*>
+      cConditionalExpressionP
+    , CConditionalExpressionSingleton <$> cLogicalOrExpressionP
+    ]
 
 cAssignmentExpressionP :: Parser CAssignmentExpression
-cAssignmentExpressionP = undefined
+cAssignmentExpressionP =
+  parserUnion
+    [ CAssignmentExpression <$> cUnaryExpressionP <*> cAssignmentOperatorP <*>
+      cAssignmentExpressionP
+    , CAssignmentExpressionSingleton <$> cConditionalExpressionP
+    ]
 
 cAssignmentOperatorP :: Parser CAssignmentOperator
-cAssignmentOperatorP = undefined
+cAssignmentOperatorP =
+  parserUnion
+    [ const CAssignmentOperatorAssign <$> singleP LAssign
+    , const CAssignmentOperatorMul <$> singleP LMultiplicationAssign
+    , const CAssignmentOperatorDiv <$> singleP LDivisionAssign
+    , const CAssignmentOperatorMod <$> singleP LModuloAssign
+    , const CAssignmentOperatorAdd <$> singleP LPlusAssign
+    , const CAssignmentOperatorSub <$> singleP LMinusAssign
+    , const CAssignmentOperatorLShift <$> singleP LBitShiftLeftAssign
+    , const CAssignmentOperatorRShfit <$> singleP LBitShiftRightAssign
+    , const CAssignmentOperatorAnd <$> singleP LBitwiseAndAssign
+    , const CAssignmentOperatorXor <$> singleP LBitwiseXorAssign
+    , const CAssignmentOperatorOr <$> singleP LBitwiseOrAssign
+    ]
 
 cExpressionP :: Parser CExpression
-cExpressionP = undefined
+cExpressionP = CExpression <$> cAssignmentExpressionP <*> cExpressionP'
+
+cExpressionP' :: Parser CExpression'
+cExpressionP' =
+  CExpression' <$> (singleP LComma *> cAssignmentExpressionP) <*> cExpressionP'
 
 cConstantExpressionP :: Parser CConstantExpression
-cConstantExpressionP = undefined
+cConstantExpressionP = CConstantExpression <$> cConditionalExpressionP
 
 cDeclarationP :: Parser CDeclaration
-cDeclarationP = undefined
+cDeclarationP =
+  CDeclaration <$> cDeclarationSpecifiersP <*> optionalP cInitDeclaratorListP
 
 cDeclarationSpecifiersP :: Parser CDeclarationSpecifiers
-cDeclarationSpecifiersP = undefined
+cDeclarationSpecifiersP =
+  parserUnion
+    [ CDeclarationSpecifiersStorageClass <$> cStorageClassSpecifierP <*>
+      optionalP cDeclarationSpecifiersP
+    , CDeclarationSpecifiersTypeSpecifier <$> cTypeSpecifierP <*>
+      optionalP cDeclarationSpecifiersP
+    , CDeclarationSpecifiersTypeQualifier <$> cTypeQualifierP <*>
+      optionalP cDeclarationSpecifiersP
+    ]
 
 cInitDeclaratorListP :: Parser CInitDeclaratorList
-cInitDeclaratorListP = undefined
+cInitDeclaratorListP =
+  CInitDeclaratorList <$> cInitDeclaratorP <*> cInitDeclaratorListP'
 
 cInitDeclaratorListP' :: Parser CInitDeclaratorList'
-cInitDeclaratorListP' = undefined
+cInitDeclaratorListP' =
+  parserUnion
+    [ CInitDeclaratorList' <$> (singleP LComma *> cInitDeclaratorP) <*>
+      cInitDeclaratorListP'
+    , pure CInitDeclaratorList'Empty
+    ]
 
 cInitDeclaratorP :: Parser CInitDeclarator
-cInitDeclaratorP = undefined
+cInitDeclaratorP =
+  parserUnion
+    [ CInitDeclarator <$> cDeclaratorP <*> (singleP LAssign *> cInitializerP)
+    , CInitDeclaratorSingleton <$> cDeclaratorP
+    ]
 
 cStorageClassSpecifierP :: Parser CStorageClassSpecifier
-cStorageClassSpecifierP = undefined
+cStorageClassSpecifierP =
+  parserUnion
+    [ const CStorageClassSpecifierTypedef <$> singleP LTypedef
+    , const CStorageClassSpecifierExtern <$> singleP LExtern
+    , const CStorageClassSpecifierStatic <$> singleP LStatic
+    , const CStorageClassSpecifierAuto <$> singleP LAuto
+    , const CStorageClassSpecifierRegister <$> singleP LRegister
+    ]
 
 cTypeSpecifierP :: Parser CTypeSpecifier
-cTypeSpecifierP = undefined
+cTypeSpecifierP =
+  parserUnion
+    [ const CTypeSpecifierVoid <$> singleP LVoid
+    , const CTypeSpecifierChar <$> singleP LChar
+    , const CTypeSpecifierShort <$> singleP LShort
+    , const CTypeSpecifierInt <$> singleP LInt
+    , const CTypeSpecifierLong <$> singleP LLong
+    , const CTypeSpecifierFloat <$> singleP LFloat
+    , const CTypeSpecifierDouble <$> singleP LDouble
+    , const CTypeSpecifierSigned <$> singleP LSigned
+    , const CTypeSpecifierUnsigned <$> singleP LUnsigned
+    , CTypeSpecifierStructOrUnion <$> cStructOrUnionSpecifierP
+    , CTypeSpecifierEnum <$> cEnumSpecifierP
+    , CTypeSpecifierTypedef <$> cTypedefNameP
+    ]
 
 cStructOrUnionSpecifierP :: Parser CStructOrUnionSpecifier
-cStructOrUnionSpecifierP = undefined
+cStructOrUnionSpecifierP =
+  parserUnion
+    [ CStructOrUnionSpecifierList <$> cStructOrUnionP <*> optionalP cIdentifierP <*>
+      (singleP LBraceOpen *> cStructDeclarationListP <* singleP LBraceClose)
+    , CStructOrUnionSpecifier <$> cStructOrUnionP <*> cIdentifierP
+    ]
 
 cStructOrUnionP :: Parser CStructOrUnion
-cStructOrUnionP = undefined
+cStructOrUnionP =
+  parserUnion
+    [const CStruct <$> singleP LStruct, const CUnion <$> singleP LUnion]
 
 cStructDeclarationListP :: Parser CStructDeclarationList
-cStructDeclarationListP = undefined
+cStructDeclarationListP =
+  parserUnion
+    [ CStructDeclarationList <$> cStructDeclarationP <*> cStructDeclarationListP
+    , CStructDeclarationListSingleton <$> cStructDeclarationP
+    ]
 
 cStructDeclarationP :: Parser CStructDeclaration
-cStructDeclarationP = undefined
+cStructDeclarationP =
+  CStructDeclaration <$> cSpecifierQualifierListP <*>
+  (cStructDeclaratorListP <* singleP LSemiColon)
 
 cSpecifierQualifierListP :: Parser CSpecifierQualifierList
-cSpecifierQualifierListP = undefined
+cSpecifierQualifierListP =
+  parserUnion
+    [ CSpecifierQualifierListSpecifier <$> cTypeSpecifierP <*>
+      optionalP cSpecifierQualifierListP
+    , CSpecifierQualifierListQualifier <$> cTypeQualifierP <*>
+      optionalP cSpecifierQualifierListP
+    ]
 
 cStructDeclaratorListP :: Parser CStructDeclaratorList
-cStructDeclaratorListP = undefined
+cStructDeclaratorListP =
+  CStructDeclaratorList <$> cStructDeclaratorP <*> cStructDeclaratorListP'
 
 cStructDeclaratorListP' :: Parser CStructDeclaratorList'
-cStructDeclaratorListP' = undefined
+cStructDeclaratorListP' =
+  parserUnion
+    [ CStructDeclaratorList' <$> (singleP LComma *> cStructDeclaratorP) <*>
+      cStructDeclaratorListP'
+    , pure CStructDeclaratorList'Empty
+    ]
 
 cStructDeclaratorP :: Parser CStructDeclarator
-cStructDeclaratorP = undefined
+cStructDeclaratorP =
+  parserUnion
+    [ CStructDeclaratorInit <$> optionalP cDeclaratorP <*>
+      (singleP LColon *> cConstantExpressionP)
+    , CStructDeclarator <$> cDeclaratorP
+    ]
 
 cEnumSpecifierP :: Parser CEnumSpecifier
-cEnumSpecifierP = undefined
+cEnumSpecifierP =
+  parserUnion
+    [ CEnumSpecifierList <$> (singleP LEnum *> optionalP cIdentifierP) <*>
+      (singleP LBraceOpen *> cEnumeratorListP <* singleP LBraceClose)
+    , CEnumSpecifier <$> (singleP LEnum *> cIdentifierP)
+    ]
 
 cEnumeratorListP :: Parser CEnumeratorList
-cEnumeratorListP = undefined
+cEnumeratorListP = CEnumeratorList <$> cEnumeratorP <*> cEnumeratorListP'
 
 cEnumeratorListP' :: Parser CEnumeratorList'
-cEnumeratorListP' = undefined
+cEnumeratorListP' =
+  parserUnion
+    [ CEnumeratorList' <$> (singleP LComma *> cEnumeratorP) <*>
+      cEnumeratorListP'
+    , pure CEnumeratorList'Empty
+    ]
 
-cEnumerator :: Parser CEnumerator
-cEnumerator = undefined
+cEnumeratorP :: Parser CEnumerator
+cEnumeratorP =
+  parserUnion
+    [ CEnumeratorAssign <$> cEnumerationConstantP <*>
+      (singleP LAssign *> cConstantExpressionP)
+    , CEnumerator <$> cEnumerationConstantP
+    ]
 
 cTypeQualifierP :: Parser CTypeQualifier
-cTypeQualifierP = undefined
+cTypeQualifierP =
+  parserUnion
+    [ const CTypeQualifierConst <$> singleP LConst
+    , const CTypeQualifierVolatile <$> singleP LVolatile
+    ]
 
 cDeclaratorP :: Parser CDeclarator
-cDeclaratorP = undefined
+cDeclaratorP = CDeclarator <$> optionalP cPointerP <*> cDirectDeclaratorP
 
 cDirectDeclaratorP :: Parser CDirectDeclarator
-cDirectDeclaratorP = undefined
+cDirectDeclaratorP =
+  parserUnion
+    [ CDirectDeclaratorParen <$>
+      (singleP LParenthesisOpen *> cDeclaratorP <* singleP LParenthesisClose) <*>
+      cDirectDeclaratorP'
+    , CDirectDeclaratorId <$> cIdentifierP <*> cDirectDeclaratorP'
+    ]
 
 cDirectDeclaratorP' :: Parser CDirectDeclarator'
-cDirectDeclaratorP' = undefined
+cDirectDeclaratorP' =
+  parserUnion
+    [ CDirectDeclarator'Indexed <$>
+      (singleP LBracketOpen *> optionalP cConstantExpressionP <*
+       singleP LBracketClose) <*>
+      cDirectDeclaratorP'
+    , CDirectDeclarator'ParamTypeList <$>
+      (singleP LParenthesisOpen *> cParameterTypeListP <*
+       singleP LParenthesisClose) <*>
+      cDirectDeclaratorP'
+    , CDirectDeclarator'IdList <$>
+      (singleP LParenthesisOpen *> optionalP cIdentifierListP <*
+       singleP LParenthesisClose) <*>
+      cDirectDeclaratorP'
+    , pure CDirectDeclarator'Empty
+    ]
 
 cPointerP :: Parser CPointer
-cPointerP = undefined
+cPointerP =
+  parserUnion
+    [ CPointerMulti <$> (singleP LStar *> optionalP cTypeQualifierListP) <*>
+      cPointerP
+    , CPointerSingle <$> (singleP LStar *> optionalP cTypeQualifierListP)
+    ]
 
 cTypeQualifierListP :: Parser CTypeQualifierList
-cTypeQualifierListP = undefined
+cTypeQualifierListP =
+  parserUnion
+    [ CTypeQualifierList <$> cTypeQualifierP <*> cTypeQualifierListP
+    , CTypeQualifierListSingleton <$> cTypeQualifierP
+    ]
 
 cParameterTypeListP :: Parser CParameterTypeList
-cParameterTypeListP = undefined
+cParameterTypeListP =
+  parserUnion
+    [ CParameterTypeListVarargs <$>
+      (cParameterListP <* singleP LComma <* singleP LVarargs)
+    , CParameterTypeList <$> cParameterListP
+    ]
 
 cParameterListP :: Parser CParameterList
-cParameterListP = undefined
+cParameterListP = CParameterList <$> cParameterDeclarationP <*> cParameterListP'
 
-cParameterListP' :: Parser CParameterList
-cParameterListP' = undefined
+cParameterListP' :: Parser CParameterList'
+cParameterListP' =
+  parserUnion
+    [ CParameterList' <$> (singleP LComma *> cParameterDeclarationP) <*>
+      cParameterListP'
+    , pure CParameterList'Empty
+    ]
 
 cParameterDeclarationP :: Parser CParameterDeclaration
-cParameterDeclarationP = undefined
+cParameterDeclarationP =
+  parserUnion
+    [ CParameterDeclaration <$> cDeclarationSpecifiersP <*> cDeclaratorP
+    , CParameterDeclarationAbstract <$> cDeclarationSpecifiersP <*>
+      optionalP cAbstractDeclaratorP
+    ]
 
 cIdentifierListP :: Parser CIdentifierList
-cIdentifierListP = undefined
+cIdentifierListP = CIdentifierList <$> cIdentifierP <*> cIdentifierListP'
 
 cIdentifierListP' :: Parser CIdentifierList'
-cIdentifierListP' = undefined
+cIdentifierListP' =
+  parserUnion
+    [ CIdentifierList' <$> (singleP LComma *> cIdentifierP) <*>
+      cIdentifierListP'
+    , pure CIdentifierList'Empty
+    ]
 
 cTypeNameP :: Parser CTypeName
-cTypeNameP = undefined
+cTypeNameP =
+  CTypeName <$> cSpecifierQualifierListP <*> optionalP cAbstractDeclaratorP
 
 cAbstractDeclaratorP :: Parser CAbstractDeclarator
-cAbstractDeclaratorP = undefined
+cAbstractDeclaratorP =
+  parserUnion
+    [ CAbstractDeclaratorDirect <$> optionalP cPointerP <*>
+      cDirectAbstractDeclaratorP
+    , CAbstractDeclaratorPointer <$> cPointerP
+    ]
 
+-- TODO: Figure out how to implement this
 cDirectAbstractDeclaratorP :: Parser CDirectAbstractDeclarator
 cDirectAbstractDeclaratorP = undefined
 
 cTypedefNameP :: Parser CTypedefName
-cTypedefNameP = undefined
+cTypedefNameP = CTypedefName <$> cIdentifierP
 
 cInitializerP :: Parser CInitializer
-cInitializerP = undefined
+cInitializerP =
+  parserUnion
+    [ CInitializerBracketListComma <$>
+      (singleP LBraceOpen *> cInitializerListP <* singleP LComma <*
+       singleP LBraceClose)
+    , CInitializerBracketList <$>
+      (singleP LBraceOpen *> cInitializerListP <* singleP LBraceClose)
+    , CInitializerAssignment <$> cAssignmentExpressionP
+    ]
 
 cInitializerListP :: Parser CInitializerList
-cInitializerListP = undefined
+cInitializerListP = CInitializerList <$> cInitializerP <*> cInitializerListP'
 
 cInitializerListP' :: Parser CInitializerList'
-cInitializerListP' = undefined
+cInitializerListP' =
+  parserUnion
+    [ CInitializerList' <$> (singleP LComma *> cInitializerP) <*>
+      cInitializerListP'
+    , pure CInitializerList'Empty
+    ]
 
 cStatementP :: Parser CStatement
-cStatementP = undefined
+cStatementP =
+  parserUnion
+    [ CStatementLabeled <$> cLabeledStatementP
+    , CStatementCompound <$> cCompoundStatementP
+    , CStatementExpression <$> cExpressionStatementP
+    , CStatementSelection <$> cSelectionStatementP
+    , CStatementIteration <$> cIterationStatementP
+    , CStatementJump <$> cJumpStatementP
+    ]
 
 cLabeledStatementP :: Parser CLabeledStatement
-cLabeledStatementP = undefined
+cLabeledStatementP =
+  parserUnion
+    [ CLabeledStatementDefault <$>
+      (singleP LDefault *> singleP LColon *> cStatementP)
+    , CLabeledStatementCase <$>
+      (singleP LCase *> cConstantExpressionP <* singleP LColon) <*>
+      cStatementP
+    , CLabeledStatementId <$> cIdentifierP <*> (singleP LColon *> cStatementP)
+    ]
 
 cCompoundStatementP :: Parser CCompoundStatement
-cCompoundStatementP = undefined
+cCompoundStatementP =
+  CCompoundStatement <$> (singleP LBraceOpen *> optionalP cDeclarationListP) <*>
+  (optionalP cStatementListP <* singleP LBraceClose)
 
-cDeclarationList :: Parser CDeclarationList
-cDeclarationList = undefined
+cDeclarationListP :: Parser CDeclarationList
+cDeclarationListP =
+  parserUnion
+    [ CDeclarationList <$> cDeclarationP <*> cDeclarationListP
+    , CDeclarationListSingleton <$> cDeclarationP
+    ]
 
 cStatementListP :: Parser CStatementList
-cStatementListP = undefined
+cStatementListP =
+  parserUnion
+    [ CStatementList <$> cStatementP <*> cStatementListP
+    , CStatementListSingleton <$> cStatementP
+    ]
 
 cExpressionStatementP :: Parser CExpressionStatement
-cExpressionStatementP = undefined
+cExpressionStatementP =
+  CExpressionStatement <$> (optionalP cExpressionP <* singleP LSemiColon)
 
 cSelectionStatementP :: Parser CSelectionStatement
-cSelectionStatementP = undefined
+cSelectionStatementP =
+  parserUnion
+    [ CSelectionStatementSwitch <$>
+      (singleP LSwitch *> singleP LParenthesisOpen *> cExpressionP <*
+       singleP LParenthesisClose) <*>
+      cStatementP
+    , CSelectionStatementIfElse <$>
+      (singleP LIf *> singleP LParenthesisOpen *> cExpressionP <*
+       singleP LParenthesisClose) <*>
+      cStatementP <*>
+      (singleP LElse *> cStatementP)
+    , CSelectionStatementIf <$>
+      (singleP LIf *> singleP LParenthesisOpen *> cExpressionP <*
+       singleP LParenthesisClose) <*>
+      cStatementP
+    ]
 
 cIterationStatementP :: Parser CIterationStatement
-cIterationStatementP = undefined
+cIterationStatementP =
+  parserUnion
+    [ CIterationStatementWhile <$>
+      (singleP LWhile *> singleP LParenthesisOpen *> cExpressionP <*
+       singleP LParenthesisClose) <*>
+      cStatementP
+    , CIterationStatementDoWhile <$> (singleP LDo *> cStatementP) <*>
+      (singleP LWhile *> singleP LParenthesisOpen *> cExpressionP <*
+       singleP LParenthesisClose <*
+       singleP LSemiColon)
+    , CIterationStatementFor <$>
+      (singleP LFor *> singleP LParenthesisOpen *> optionalP cExpressionP) <*>
+      (singleP LSemiColon *> optionalP cExpressionP) <*>
+      (singleP LSemiColon *> optionalP cExpressionP <* singleP LParenthesisClose) <*>
+      cStatementP
+    ]
 
 cJumpStatementP :: Parser CJumpStatement
-cJumpStatementP = undefined
+cJumpStatementP =
+  parserUnion
+    [ CJumpStatementGoto <$>
+      (singleP LGoto *> cIdentifierP <* singleP LSemiColon)
+    , const CJumpStatementContinue <$> (singleP LContinue <* singleP LSemiColon)
+    , const CJumpStatementBreak <$> (singleP LBreak <* singleP LSemiColon)
+    , CJumpStatementReturn <$>
+      (singleP LReturn *> optionalP cExpressionP <* singleP LSemiColon)
+    ]
 
 cTranslationUnitP :: Parser CTranslationUnit
-cTranslationUnitP = undefined
+cTranslationUnitP =
+  parserUnion
+    [ CTranslationUnitTranslation <$> cExternalDeclarationP <*>
+      cTranslationUnitP
+    , CTranslationUnitExternal <$> cExternalDeclarationP
+    ]
 
 cExternalDeclarationP :: Parser CExternalDeclaration
-cExternalDeclarationP = undefined
+cExternalDeclarationP =
+  parserUnion
+    [ CExternalDeclarationFunction <$> cFunctionDefinitionP
+    , CExternalDeclaration <$> cDeclarationP
+    ]
 
 cFunctionDefinitionP :: Parser CFunctionDefinition
-cFunctionDefinitionP = undefined
-
+cFunctionDefinitionP =
+  parserUnion
+    [ CFunctionDefinitionSpecifiers <$> optionalP cDeclarationSpecifiersP <*>
+      cDeclaratorP
+    , CFunctionDefinitionList <$> optionalP cDeclarationListP <*>
+      cCompoundStatementP
+    ]
