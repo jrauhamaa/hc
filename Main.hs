@@ -2,8 +2,21 @@ module Main where
 
 import System.IO
 
-import Scanner (fromSpec, scanInput, ScanElement)
-import Lexeme (lexemes)
+import Scanner2 (Scanner(..), scanCCode, ScanElement(..))
+import Lexeme (CLexeme(..))
+
+main :: IO ()
+main = do
+  withFile
+    "test/hello.c"
+    ReadMode
+    (\f -> do
+       contents <- hGetContents f
+       print $ scanCCode contents)
+{-
+import Lexeme
+import Parser (Parser(..), cParser)
+import Scanner (ScanElement, fromSpec, scanInput)
 
 scanFileContents :: String -> Maybe [ScanElement]
 scanFileContents toParse = do
@@ -17,4 +30,9 @@ main = do
     ReadMode
     (\f -> do
        contents <- hGetContents f
-       print $ scanFileContents contents)
+       print $ do
+         scanElems <- scanFileContents contents
+         return
+           $ show(runParser cParser $
+            filter ((`notElem` [LWhiteSpace, LComment]) . snd) scanElems))
+-}
