@@ -50,7 +50,7 @@ instance Functor Scanner where
   fmap fab sa = Scanner $ (fmap . fmap . fmap) fab . runScanner sa
 
 instance Applicative Scanner where
-  pure a = Scanner $ \input@(l, s) -> Right (input, ScanElement l a)
+  pure a = Scanner $ \input@(l, _) -> Right (input, ScanElement l a)
   sab <*> sa =
     Scanner $ \input -> do
       (input', seab) <- runScanner sab input
@@ -66,10 +66,14 @@ instance Alternative Scanner where
   empty = Scanner $ const empty
   Scanner s1 <|> Scanner s2 = Scanner $ \input -> s1 input <|> s2 input
 
+------------------
+-- MAIN SCANNER --
+------------------
 scanCCode :: String -> Either ScanError [ScanElement CLexeme]
 scanCCode input = scanCCode' [] ((1, 1), input)
 
-scanCCode' :: [ScanElement CLexeme] -> Input -> Either ScanError [ScanElement CLexeme]
+scanCCode' ::
+     [ScanElement CLexeme] -> Input -> Either ScanError [ScanElement CLexeme]
 scanCCode' scanned input =
   case runScanner cScanner input of
     Left e -> Left e
@@ -78,89 +82,110 @@ scanCCode' scanned input =
         then Right $ scanned <> [se]
         else scanCCode' (scanned <> [se]) input'
 
-
 cScanner :: Scanner CLexeme
-cScanner =
-  lCommentS <|> lAutoS <|> lBreakS <|> lCaseS <|> lCharS <|> lConstS <|>
-  lContinueS <|>
-  lDefaultS <|>
-  lDoS <|>
-  lDoubleS <|>
-  lElseS <|>
-  lEnumS <|>
-  lExternS <|>
-  lFloatS <|>
-  lForS <|>
-  lGotoS <|>
-  lIfS <|>
-  lIntS <|>
-  lLongS <|>
-  lRegisterS <|>
-  lReturnS <|>
-  lShortS <|>
-  lSignedS <|>
-  lSizeofS <|>
-  lStaticS <|>
-  lStructS <|>
-  lSwitchS <|>
-  lTypedefS <|>
-  lUnionS <|>
-  lUnsignedS <|>
-  lVoidS <|>
-  lVolatileS <|>
-  lWhileS <|>
-  lParenthesisOpenS <|>
-  lParenthesisCloseS <|>
-  lBracketOpenS <|>
-  lBracketCloseS <|>
-  lBraceOpenS <|>
-  lBraceCloseS <|>
-  lNotEqualsS <|>
-  lNotS <|>
-  lEqualsS <|>
-  lLTES <|>
-  lLTS <|>
-  lGTES <|>
-  lGTS <|>
-  lAndS <|>
-  lOrS <|>
-  lArrowS <|>
-  lAssignS <|>
-  lModuloAssignS <|>
-  lMultiplicationAssignS <|>
-  lPlusAssignS <|>
-  lMinusAssignS <|>
-  lDivisionAssignS <|>
-  lBitwiseAndAssignS <|>
-  lBitwiseOrAssignS <|>
-  lBitShiftLeftAssignS <|>
-  lBitShiftRightAssignS <|>
-  lBitwiseXorAssignS <|>
-  lModuloS <|>
-  lStarS <|>
-  lIncrementS <|>
-  lPlusS <|>
-  lDecrementS <|>
-  lMinusS <|>
-  lDivisionS <|>
-  lAmpS <|>
-  lBitwiseOrS <|>
-  lBitShiftLeftS <|>
-  lBitShiftRightS <|>
-  lBitwiseXorS <|>
-  lBitwiseNotS <|>
-  lCommaS <|>
-  lVarargsS <|>
-  lDotS <|>
-  lColonS <|>
-  lSemiColonS <|>
-  lTernaryS <|>
-  lCharLiteralS <|>
-  lFloatLiteralS <|>
-  lIntLiteralS <|>
-  lStringLiteralS <|>
-  lLabelS <|>
-  lWhiteSpaceS
+cScanner
+  -- begins with /
+  =   lCommentS
+  <|> lDivisionAssignS
+  <|> lDivisionS
+  -- begins with do
+  <|> lDoubleS
+  <|> lDoS
+  -- begins with <
+  <|> lBitShiftLeftAssignS
+  <|> lBitShiftLeftS
+  <|> lLTES
+  <|> lLTS
+  -- begins with >
+  <|> lBitShiftRightAssignS
+  <|> lBitShiftRightS
+  <|> lGTES
+  <|> lGTS
+  -- begins with -
+  <|> lMinusAssignS
+  <|> lDecrementS
+  <|> lArrowS
+  <|> lMinusS
+  -- begins with +
+  <|> lPlusAssignS
+  <|> lIncrementS
+  <|> lPlusS
+  -- begins with .
+  <|> lVarargsS
+  <|> lDotS
+  -- begins with &
+  <|> lAndS
+  <|> lBitwiseAndAssignS
+  <|> lAmpS
+  -- begins with |
+  <|> lOrS
+  <|> lBitwiseOrAssignS
+  <|> lBitwiseOrS
+  -- begins with number
+  <|> lIntLiteralS
+  <|> lFloatLiteralS
+  -- begins with =
+  <|> lEqualsS
+  <|> lAssignS
+  -- begins with !
+  <|> lNotEqualsS
+  <|> lNotS
+  -- begins with ^
+  <|> lBitwiseXorAssignS
+  <|> lBitwiseXorS
+  -- begins with *
+  <|> lStarS
+  <|> lMultiplicationAssignS
+  -- begins with %
+  <|> lModuloAssignS
+  <|> lModuloS
+  -- no conflicts from this point onwards
+  <|> lAutoS
+  <|> lBreakS
+  <|> lCaseS
+  <|> lCharS
+  <|> lConstS
+  <|> lContinueS
+  <|> lDefaultS
+  <|> lElseS
+  <|> lEnumS
+  <|> lExternS
+  <|> lFloatS
+  <|> lForS
+  <|> lGotoS
+  <|> lIfS
+  <|> lIntS
+  <|> lLongS
+  <|> lRegisterS
+  <|> lReturnS
+  <|> lShortS
+  <|> lSignedS
+  <|> lSizeofS
+  <|> lStaticS
+  <|> lStructS
+  <|> lSwitchS
+  <|> lTypedefS
+  <|> lUnionS
+  <|> lUnsignedS
+  <|> lVoidS
+  <|> lVolatileS
+  <|> lWhileS
+  <|> lParenthesisOpenS
+  <|> lParenthesisCloseS
+  <|> lBracketOpenS
+  <|> lBracketCloseS
+  <|> lBraceOpenS
+  <|> lBraceCloseS
+  <|> lBitwiseNotS
+  <|> lCommaS
+  <|> lColonS
+  <|> lSemiColonS
+  <|> lTernaryS
+  <|> lCharLiteralS
+  <|> lStringLiteralS
+  <|> lWhiteSpaceS
+  -- this must be last
+  <|> lLabelS
 
 -----------
 -- UTILS --
@@ -180,8 +205,8 @@ unexpectedInputError expected encountered location =
     ]
 
 nextLoc :: Char -> Coordinates -> Coordinates
-nextLoc '\n' l = ((fst l) + 1, 1)
-nextLoc _ l = (fst l, (snd l) + 1)
+nextLoc '\n' l = (fst l + 1, 1)
+nextLoc _ l = (fst l, snd l + 1)
 
 charS :: Char -> Scanner Char
 charS c =
@@ -189,7 +214,7 @@ charS c =
     (l, "") -> Left $ emptyInputError l
     (l, c':rest) ->
       if c == c'
-        then Right (((nextLoc c l), rest), ScanElement (nextLoc c l) c)
+        then Right ((nextLoc c l, rest), ScanElement l c)
         else Left $ unexpectedInputError [c] [c'] l
 
 stringS :: String -> Scanner String
@@ -237,17 +262,35 @@ escapeChar =
   ('"' <$ stringS "\\\"") <|>
   ('\\' <$ stringS "\\\\")
 
+nonNumeric :: String
+nonNumeric = ['a' .. 'z'] <> ['A' .. 'Z'] <> "_"
+
+nonZeroDecimalDigit :: String
+nonZeroDecimalDigit = ['1' .. '9']
+
+decimalDigit :: String
+decimalDigit = '0' : nonZeroDecimalDigit
+
+hexDigit :: String
+hexDigit = decimalDigit <> ['a' .. 'f'] <> ['A' .. 'F']
+
+alphaNumeric :: String
+alphaNumeric = decimalDigit <> nonNumeric
+
 octalDigit :: String
 octalDigit = ['0' .. '7']
+
+whiteSpace :: String
+whiteSpace = " \t\n\r"
+
+hexDigits :: String
+hexDigits = ['0' .. '9'] <> ['a' .. 'f'] <> ['A' .. 'F']
 
 escapeCharOctal :: Scanner Char
 escapeCharOctal =
   fmap (chr . fst . head . readOct) . (:) <$>
   (stringS "\\0" *> scanIf (`elem` octalDigit)) <*>
   spanS (`elem` octalDigit)
-
-hexDigits :: String
-hexDigits = ['0' .. '9'] <> ['a' .. 'f'] <> ['A' .. 'F']
 
 escapeCharHex :: Scanner Char
 escapeCharHex =
@@ -261,6 +304,7 @@ escapeS = escapeChar <|> escapeCharOctal <|> escapeCharHex
 ----------------------
 -- KEYWORD SCANNERS --
 ----------------------
+
 lAutoS :: Scanner CLexeme
 lAutoS = LAuto <$ stringS "auto"
 
@@ -495,16 +539,15 @@ lSemiColonS = LSemiColon <$ charS ';'
 lTernaryS :: Scanner CLexeme
 lTernaryS = LTernary <$ charS '?'
 
---------------------
--- OTHER SCANNERS --
---------------------
-whiteSpaceChars :: String
-whiteSpaceChars = " \t\n\r"
-
+----------------
+-- WHITESPACE --
+----------------
 lWhiteSpaceS :: Scanner CLexeme
-lWhiteSpaceS =
-  LWhiteSpace <$
-  (scanIf (`elem` whiteSpaceChars) *> spanS (`elem` whiteSpaceChars))
+lWhiteSpaceS = LWhiteSpace <$ spanOneOrMoreS (`elem` whiteSpace)
+
+--------------
+-- COMMENTS --
+--------------
 
 lCommentS :: Scanner CLexeme
 lCommentS = singleCommentS <|> multiLineCommentS
@@ -521,31 +564,24 @@ multiLineCommentS' previouslyScanned =
   Scanner $ \case
     (l, c1:c2:rest) ->
       if [c1, c2] == "*/"
-        then Right $ ((l, c1 : c2 : rest), ScanElement l previouslyScanned)
+        then Right ((l, c1 : c2 : rest), ScanElement l previouslyScanned)
         else runScanner
                (multiLineCommentS' (previouslyScanned <> [c1]))
                (nextLoc c1 l, c2 : rest)
     (l, _) -> Left $ emptyInputError l
 
-nonNumeric :: String
-nonNumeric = ['a' .. 'z'] <> ['A' .. 'Z'] <> "_"
-
-nonZeroDecimalDigit :: String
-nonZeroDecimalDigit = ['1' .. '9']
-
-decimalDigit :: String
-decimalDigit = '0' : nonZeroDecimalDigit
-
-hexDigit :: String
-hexDigit = decimalDigit <> ['a' .. 'f'] <> ['A' .. 'F']
-
-alphaNumeric :: String
-alphaNumeric = decimalDigit <> nonNumeric
+----------------
+-- IDENTIFIER --
+----------------
 
 lLabelS :: Scanner CLexeme
 lLabelS =
   LLabel <$>
-  ((:) <$> scanIf (`elem` nonNumeric) <*> spanS (`elem` alphaNumeric))
+  liftA2 (:) (scanIf (`elem` nonNumeric)) (spanS (`elem` alphaNumeric))
+
+--------------------
+-- STRING LITERAL --
+--------------------
 
 -- /L?"([^\n"\\]|(\\[afnrtv'"\\]))*"/
 lStringLiteralS :: Scanner CLexeme
@@ -555,21 +591,27 @@ lStringLiteralS =
    many (scanIf (`notElem` "\n\"\\") <|> escapeS) <*
    charS '"')
 
+-----------------
+-- INT LITERAL --
+-----------------
+
 integerSuffixS :: Scanner String
 integerSuffixS =
-  ((:) <$> scanIf (`elem` "Uu") <*> optionalCharS (scanIf (`elem` "Ll"))) <|>
-  ((:) <$> scanIf (`elem` "Ll") <*> optionalCharS (scanIf (`elem` "Uu")))
+  liftA2 (:) (scanIf (`elem` "Uu")) (optionalCharS $ scanIf (`elem` "Ll")) <|>
+  liftA2 (:) (scanIf (`elem` "Ll")) (optionalCharS $ scanIf (`elem` "Uu"))
 
 lIntLiteralDecimalS :: Scanner CLexeme
 lIntLiteralDecimalS =
   LIntLiteral . fst . head . readDec <$>
-  ((:) <$> scanIf (`elem` nonZeroDecimalDigit) <*>
-   (spanS (`elem` decimalDigit) <* optionalStringS integerSuffixS))
+  liftA2
+    (:)
+    (scanIf (`elem` nonZeroDecimalDigit))
+    (spanS (`elem` decimalDigit) <* optionalStringS integerSuffixS)
 
 lIntLiteralOctalS :: Scanner CLexeme
 lIntLiteralOctalS =
   LIntLiteral . fst . head . readOct <$>
-  ((:) <$> charS '0' <*> spanS (`elem` octalDigit))
+  liftA2 (:) (charS '0') (spanS (`elem` octalDigit))
 
 lIntLiteralHexS :: Scanner CLexeme
 lIntLiteralHexS =
@@ -579,6 +621,10 @@ lIntLiteralHexS =
 lIntLiteralS :: Scanner CLexeme
 lIntLiteralS = lIntLiteralDecimalS <|> lIntLiteralOctalS <|> lIntLiteralHexS
 
+------------------
+-- CHAR LITERAL --
+------------------
+
 lCharLiteralS :: Scanner CLexeme
 lCharLiteralS =
   LCharLiteral . head <$>
@@ -586,26 +632,9 @@ lCharLiteralS =
    many (scanIf (`notElem` "\\\n'") <|> escapeS) <*
    charS '\'')
 
-floatSuffixS :: Scanner Char
-floatSuffixS = scanIf (`elem` "fFlL")
-
-fractionalConstantS' :: Scanner String
-fractionalConstantS' =
-  (\s1 c s2 -> s1 <> [c] <> s2) <$> spanS (`elem` decimalDigit) <*> charS '.' <*>
-  spanOneOrMoreS (`elem` decimalDigit)
-
-fractionalConstantS'' :: Scanner String
-fractionalConstantS'' =
-  (\s c -> s <> [c]) <$> spanOneOrMoreS (`elem` decimalDigit) <*> charS '.'
-
-fractionalConstantS :: Scanner String
-fractionalConstantS = fractionalConstantS' <|> fractionalConstantS''
-
-exponentPartS :: Scanner String
-exponentPartS =
-  (\c s1 s2 -> [c] <> s1 <> s2) <$> scanIf (`elem` "eE") <*>
-  optionalCharS (scanIf (`elem` "+-")) <*>
-  spanOneOrMoreS (`elem` decimalDigit)
+-------------------
+-- FLOAT LITERAL --
+-------------------
 
 readFloatLiteral :: String -> String -> Double
 readFloatLiteral digits exponentPart = read (cleanDigits <> exponentPart)
@@ -616,17 +645,47 @@ readFloatLiteral digits exponentPart = read (cleanDigits <> exponentPart)
         then zeroPadded <> "0"
         else zeroPadded
 
+floatSuffixS :: Scanner Char
+floatSuffixS = scanIf (`elem` "fFlL")
+
+fractionalConstantS' :: Scanner String
+fractionalConstantS' =
+  liftA3
+    (\s1 c s2 -> s1 <> [c] <> s2)
+    (spanS (`elem` decimalDigit))
+    (charS '.')
+    (spanOneOrMoreS (`elem` decimalDigit))
+
+fractionalConstantS'' :: Scanner String
+fractionalConstantS'' =
+  liftA2 (\s c -> s <> [c]) (spanOneOrMoreS (`elem` decimalDigit)) (charS '.')
+
+fractionalConstantS :: Scanner String
+fractionalConstantS = fractionalConstantS' <|> fractionalConstantS''
+
+exponentPartS :: Scanner String
+exponentPartS =
+  liftA3
+    (\c s1 s2 -> [c] <> s1 <> s2)
+    (scanIf (`elem` "eE"))
+    (optionalCharS $ scanIf (`elem` "+-"))
+    (spanOneOrMoreS (`elem` decimalDigit))
+
 lFloatLiteralS' :: Scanner CLexeme
 lFloatLiteralS' =
   LFloatLiteral <$>
-  (readFloatLiteral <$> fractionalConstantS <*>
-   (optionalStringS exponentPartS <* optionalCharS floatSuffixS))
+  liftA2
+     readFloatLiteral
+     fractionalConstantS
+     (optionalStringS exponentPartS <* optionalCharS floatSuffixS)
 
 lFloatLiteralS'' :: Scanner CLexeme
 lFloatLiteralS'' =
   LFloatLiteral <$>
-  (readFloatLiteral <$> spanOneOrMoreS (`elem` decimalDigit) <*>
-   (exponentPartS <* optionalCharS floatSuffixS))
+  liftA2
+     readFloatLiteral
+     (spanOneOrMoreS (`elem` decimalDigit))
+     (exponentPartS <* optionalCharS floatSuffixS)
 
 lFloatLiteralS :: Scanner CLexeme
 lFloatLiteralS = lFloatLiteralS' <|> lFloatLiteralS''

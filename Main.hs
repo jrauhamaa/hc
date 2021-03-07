@@ -2,8 +2,8 @@ module Main where
 
 import System.IO
 
-import Scanner2 (Scanner(..), scanCCode, ScanElement(..))
-import Lexeme (CLexeme(..))
+import Scanner2 (scanCCode)
+-- import Lexeme (CLexeme(..))
 
 main :: IO ()
 main = do
