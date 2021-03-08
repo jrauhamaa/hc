@@ -12,10 +12,9 @@ import Lexeme (CLexeme(..))
 -----------
 -- TYPES --
 -----------
+
 type Row = Int
-
 type Col = Int
-
 type Coordinates = (Row, Col)
 
 data ScanError =
@@ -27,8 +26,8 @@ data ScanError =
 
 data ScanElement a =
   ScanElement
-    { loc :: Coordinates
-    , result :: a
+    { scanLoc :: Coordinates
+    , scanElem :: a
     }
   deriving (Show, Eq)
 
@@ -40,11 +39,11 @@ newtype Scanner a =
     }
 
 instance Functor ScanElement where
-  fmap fab sea = ScanElement (loc sea) (fab $ result sea)
+  fmap fab sea = ScanElement (scanLoc sea) (fab $ scanElem sea)
 
 instance Applicative ScanElement where
   pure a = ScanElement (1, 1) a
-  seab <*> sea = ScanElement (loc seab) (result seab $ result sea)
+  seab <*> sea = ScanElement (scanLoc seab) (scanElem seab $ scanElem sea)
 
 instance Functor Scanner where
   fmap fab sa = Scanner $ (fmap . fmap . fmap) fab . runScanner sa
@@ -134,8 +133,8 @@ cScanner
   <|> lBitwiseXorAssignS
   <|> lBitwiseXorS
   -- begins with *
-  <|> lStarS
   <|> lMultiplicationAssignS
+  <|> lStarS
   -- begins with %
   <|> lModuloAssignS
   <|> lModuloS
