@@ -4,7 +4,7 @@ import System.IO
 
 import Lexeme (CLexeme(..))
 import Parser (Parser(..), cParser)
-import Scanner2 (ScanElement(..), scanCCode)
+import Scanner (ScanElement(..), scanCCode)
 
 main :: IO ()
 main = do

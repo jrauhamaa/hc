@@ -4,7 +4,7 @@ module Parser where
 
 import Lexeme (CLexeme(..))
 import ParseElements
-import Scanner2 (Coordinates, ScanElement(..))
+import Scanner (Coordinates, ScanElement(..))
 
 -----------
 -- TYPES --
