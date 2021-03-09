@@ -5,16 +5,16 @@ import Scanner (Coordinates)
 data ParseElement a =
   ParseElement
     { parseLoc :: Coordinates
-    , element :: a
+    , parseElem :: a
     }
   deriving (Show, Eq)
 
 instance Functor ParseElement where
-  fmap fab pea = ParseElement (parseLoc pea) (fab $ element pea)
+  fmap fab pea = ParseElement (parseLoc pea) (fab $ parseElem pea)
 
 instance Applicative ParseElement where
   pure a = ParseElement (1, 1) a
-  peab <*> pea = ParseElement (parseLoc pea) (element peab $ element pea)
+  peab <*> pea = ParseElement (parseLoc pea) (parseElem peab $ parseElem pea)
 
 type PE = ParseElement
 

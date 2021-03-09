@@ -1,6 +1,14 @@
 {-# LANGUAGE LambdaCase #-}
 
+{-
+strategy : each parser tries each possible option
+           and returns a nonempty list of possible parse trees
+           or ParseError
+-}
 module Parser where
+
+import Data.List
+import Data.Either
 
 import Lexeme (CLexeme(..))
 import ParseElements
@@ -9,36 +17,39 @@ import Scanner (Coordinates, ScanElement(..))
 -----------
 -- TYPES --
 -----------
-
 type Input = [ScanElement CLexeme]
+
+type ParseOutput a = Either ParseError [(Input, ParseElement a)]
 
 newtype Parser a =
   Parser
-    { runParser :: Input -> Either ParseError (Input, a)
+    { runParser :: Input -> ParseOutput a
     }
-
-type PEParser a = Parser (ParseElement a)
 
 data ParseError =
   ParseError
-    { errorCoordinates :: Coordinates
+    { errorLoc :: Coordinates
     , errorMsg :: String
     }
   deriving (Eq, Show)
 
 instance Functor Parser where
-  fmap fab pa = Parser $ (fmap . fmap) fab . runParser pa
+  fmap fab pa = Parser $ (fmap . fmap . fmap . fmap) fab . runParser pa
 
 instance Applicative Parser where
-  pure x = Parser $ \input -> Right (input, x)
+  pure x = Parser $ \input -> Right [(input, ParseElement (getLoc input) x)]
   p1 <*> p2 =
     Parser $ \input -> do
-      (input', ab) <- runParser p1 input
-      (input'', a) <- runParser p2 input'
-      return (input'', ab a)
+      rab <- runParser p1 input
+      collectOutput $ map
+        (\(input', ParseElement _ fab) ->
+          runParser (fab <$> p2) input')
+        rab
+
+{-
 
 -- CTranslationUnit is the root element in the grammar
-cParser :: PEParser CTranslationUnit
+cParser :: Parser CTranslationUnit
 cParser =
   Parser $ \input ->
     case runParser cTranslationUnitP input of
@@ -47,46 +58,29 @@ cParser =
       r@(Right (notParsed:_, _)) -> r
       --  Left $
       --  ParseError (fst $ notParsed) "Parsing terminated prematurely"
+-}
 
 -----------
 -- UTILS --
 -----------
--- Try parsers in order. If both fail use error message of the one
--- that reached the furthest
-parserUnion' :: Parser a -> Parser a -> Parser a
-parserUnion' p1 p2 =
-  Parser $ \input ->
-    case runParser p1 input of
-      r1@(Right _) -> r1
-      e1@(Left (ParseError c1 _)) ->
-        case runParser p2 input of
-          r2@(Right _) -> r2
-          e2@(Left (ParseError c2 _)) ->
-            if c1 > c2
-              then e1
-              else e2
+getLoc :: Input -> Coordinates
+getLoc [] = (0, 0)
+getLoc i = scanLoc $ head i
+
+collectOutput :: [ParseOutput a] -> ParseOutput a
+collectOutput p =
+  if length successful == 0
+    then maximumBy (\(Left (ParseError c1 _)) (Left (ParseError c2 _)) -> compare c1 c2) p
+    else concat <$> sequenceA successful
+  where
+    successful = filter isRight p
 
 parserUnion :: [Parser a] -> Parser a
-parserUnion = foldl parserUnion' failingP
-  where
-    failingP = Parser $ \_ -> Left $ ParseError (0, 0) ""
-
--- transform parsers with parseElementP before union
-parseElementUnion :: [Parser a] -> Parser (ParseElement a)
-parseElementUnion = parserUnion . map parseElementP
-
-getCoords :: [ScanElement CLexeme] -> Coordinates
-getCoords [] = (0, 0) -- we should never get here
-getCoords elems = scanLoc $ head elems
-
--- wrap result of parser in ParseElement
-parseElementP :: Parser a -> PEParser a
-parseElementP p =
-  Parser $ \input ->
-    runParser (ParseElement (getCoords input) <$> p) input
+parserUnion parsers =
+  Parser $ \input -> collectOutput $ map (\p -> runParser p input) parsers
 
 unexpectedEof :: ParseError
-unexpectedEof = ParseError (maxBound, maxBound) "Unexpected EOF"
+unexpectedEof = ParseError (0, 0) "Unexpected EOF"
 
 unexpectedLexeme :: Coordinates -> String -> String -> ParseError
 unexpectedLexeme c expected encountered =
@@ -96,76 +90,73 @@ unexpectedLexeme c expected encountered =
 ------------------------
 -- ELEMENTARY PARSERS --
 ------------------------
+
 singleP :: CLexeme -> Parser CLexeme
 singleP l =
   Parser $ \case
     [] -> Left unexpectedEof
     ((ScanElement c lexeme):rest) ->
       if lexeme == l
-        then Right (rest, l)
+        then Right [(rest, ParseElement c l)]
         else Left $ unexpectedLexeme c (show l) (show lexeme)
 
-intLiteralP :: PEParser Int
+intLiteralP :: Parser Int
 intLiteralP =
-  parseElementP $
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement _ (LIntLiteral x)):rest) -> Right (rest, x)
+    ((ScanElement c (LIntLiteral x)):rest) -> Right [(rest, ParseElement c x)]
     ((ScanElement c l):_) -> Left $ unexpectedLexeme c "LIntLiteral" $ show l
 
-floatLiteralP :: PEParser Double
+floatLiteralP :: Parser Double
 floatLiteralP =
-  parseElementP $
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement _ (LFloatLiteral x)):rest) -> Right (rest, x)
+    ((ScanElement c (LFloatLiteral x)):rest) -> Right [(rest, ParseElement c x)]
     ((ScanElement c l):_) -> Left $ unexpectedLexeme c "LFloatLiteral" $ show l
 
-charLiteralP :: PEParser Char
+charLiteralP :: Parser Char
 charLiteralP =
-  parseElementP $
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement _ (LCharLiteral x)):rest) -> Right (rest, x)
+    ((ScanElement c (LCharLiteral x)):rest) -> Right [(rest, ParseElement c x)]
     ((ScanElement c l):_) -> Left $ unexpectedLexeme c "LCharLiteral" $ show l
 
-stringLiteralP :: PEParser String
+stringLiteralP :: Parser String
 stringLiteralP =
-  parseElementP $
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement _ (LStringLiteral x)):rest) -> Right (rest, x)
+    ((ScanElement c (LStringLiteral x)):rest) -> Right [(rest, ParseElement c x)]
     ((ScanElement c l):_) -> Left $ unexpectedLexeme c "LStringLiteral" $ show l
 
-labelP :: PEParser String
+labelP :: Parser String
 labelP =
-  parseElementP $
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement _ (LLabel x)):rest) -> Right (rest, x)
+    ((ScanElement c (LLabel x)):rest) -> Right [(rest, ParseElement c x)]
     ((ScanElement c l):_) -> Left $ unexpectedLexeme c "LLabel" $ show l
 
 ---------------
 -- C PARSERS --
 ---------------
-cConstantP :: PEParser CConstant
+
+cConstantP :: Parser CConstant
 cConstantP =
-  parseElementUnion
+  parserUnion
     [ CConstantInteger <$> intLiteralP
     , CConstantFloat <$> floatLiteralP
     , CConstantCharacter <$> charLiteralP
     , CConstantEnumeration <$> cEnumerationConstantP
     ]
 
-cIdentifierP :: PEParser CIdentifier
-cIdentifierP = parseElementP $ CIdentifier <$> labelP
+cIdentifierP :: Parser CIdentifier
+cIdentifierP = CIdentifier <$> labelP
 
-cEnumerationConstantP :: PEParser CEnumerationConstant
-cEnumerationConstantP = parseElementP $ CEnumerationConstant <$> cIdentifierP
+cEnumerationConstantP :: Parser CEnumerationConstant
+cEnumerationConstantP = CEnumerationConstant <$> cIdentifierP
 
-cPrimaryExpressionP :: PEParser CPrimaryExpression
+cPrimaryExpressionP :: Parser CPrimaryExpression
 cPrimaryExpressionP =
-  parseElementUnion
+  parserUnion
     [ CPrimaryExpressionId <$> cIdentifierP
     , CPrimaryExpressionConst <$> cConstantP
     , CPrimaryExpressionStr <$> stringLiteralP
@@ -173,14 +164,13 @@ cPrimaryExpressionP =
       (singleP LParenthesisOpen *> cExpressionP <* singleP LParenthesisClose)
     ]
 
-cPostfixExpressionP :: PEParser CPostfixExpression
+cPostfixExpressionP :: Parser CPostfixExpression
 cPostfixExpressionP =
-  parseElementP $
   CPostfixExpression <$> cPrimaryExpressionP <*> cPostfixExpressionP'
 
-cPostfixExpressionP' :: PEParser CPostfixExpression'
+cPostfixExpressionP' :: Parser CPostfixExpression'
 cPostfixExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CPostfixExpression'Increment <$>
       (singleP LIncrement *> cPostfixExpressionP')
     , CPostfixExpression'Decrement <$>
@@ -199,23 +189,22 @@ cPostfixExpressionP' =
     , pure CPostfixExpression'Empty
     ]
 
-cArgumentExpressionListP :: PEParser CArgumentExpressionList
+cArgumentExpressionListP :: Parser CArgumentExpressionList
 cArgumentExpressionListP =
-  parseElementP $
   CArgumentExpressionList <$> cAssignmentExpressionP <*>
   cArgumentExpressionListP'
 
-cArgumentExpressionListP' :: PEParser CArgumentExpressionList'
+cArgumentExpressionListP' :: Parser CArgumentExpressionList'
 cArgumentExpressionListP' =
-  parseElementUnion
+  parserUnion
     [ CArgumentExpressionList' <$> cAssignmentExpressionP <*>
       cArgumentExpressionListP'
     , pure CArgumentExpressionList'Empty
     ]
 
-cUnaryExpressionP :: PEParser CUnaryExpression
+cUnaryExpressionP :: Parser CUnaryExpression
 cUnaryExpressionP =
-  parseElementUnion
+  parserUnion
     [ CUnaryExpressionSizeof <$> (singleP LSizeof *> cUnaryExpressionP)
     , CUnaryExpressionSizeofType <$>
       (singleP LSizeof *> singleP LParenthesisOpen *> cTypeNameP <*
@@ -226,9 +215,9 @@ cUnaryExpressionP =
     , CUnaryExpressionSingleton <$> cPostfixExpressionP
     ]
 
-cUnaryOperatorP :: PEParser CUnaryOperator
+cUnaryOperatorP :: Parser CUnaryOperator
 cUnaryOperatorP =
-  parseElementUnion
+  parserUnion
     [ CUnaryOperatorAddress <$ singleP LAmp
     , CUnaryOperatorMultiply <$ singleP LStar
     , CUnaryOperatorPlus <$ singleP LPlus
@@ -237,23 +226,22 @@ cUnaryOperatorP =
     , CUnaryOperatorNot <$ singleP LNot
     ]
 
-cCastExpressionP :: PEParser CCastExpression
+cCastExpressionP :: Parser CCastExpression
 cCastExpressionP =
-  parseElementUnion
+  parserUnion
     [ CCastExpression <$>
       (singleP LParenthesisOpen *> cTypeNameP <* singleP LParenthesisClose) <*>
       cCastExpressionP
     , CCastExpressionSingleton <$> cUnaryExpressionP
     ]
 
-cMultiplicativeExpressionP :: PEParser CMultiplicativeExpression
+cMultiplicativeExpressionP :: Parser CMultiplicativeExpression
 cMultiplicativeExpressionP =
-  parseElementP $
   CMultiplicativeExpression <$> cCastExpressionP <*> cMultiplicativeExpressionP'
 
-cMultiplicativeExpressionP' :: PEParser CMultiplicativeExpression'
+cMultiplicativeExpressionP' :: Parser CMultiplicativeExpression'
 cMultiplicativeExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CMultiplicativeExpression'Mul <$> (singleP LStar *> cCastExpressionP) <*>
       cMultiplicativeExpressionP'
     , CMultiplicativeExpression'Div <$> (singleP LDivision *> cCastExpressionP) <*>
@@ -263,14 +251,13 @@ cMultiplicativeExpressionP' =
     , pure CMultiplicativeExpression'Empty
     ]
 
-cAdditiveExpressionP :: PEParser CAdditiveExpression
+cAdditiveExpressionP :: Parser CAdditiveExpression
 cAdditiveExpressionP =
-  parseElementP $
   CAdditiveExpression <$> cMultiplicativeExpressionP <*> cAdditiveExpressionP'
 
-cAdditiveExpressionP' :: PEParser CAdditiveExpression'
+cAdditiveExpressionP' :: Parser CAdditiveExpression'
 cAdditiveExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CAdditiveExpression'Plus <$> (singleP LPlus *> cMultiplicativeExpressionP) <*>
       cAdditiveExpressionP'
     , CAdditiveExpression'Minus <$>
@@ -279,14 +266,13 @@ cAdditiveExpressionP' =
     , pure CAdditiveExpression'Empty
     ]
 
-cShiftExpressionP :: PEParser CShiftExpression
+cShiftExpressionP :: Parser CShiftExpression
 cShiftExpressionP =
-  parseElementP $
   CShiftExpression <$> cAdditiveExpressionP <*> cShiftExpressionP'
 
-cShiftExpressionP' :: PEParser CShiftExpression'
+cShiftExpressionP' :: Parser CShiftExpression'
 cShiftExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CShiftExpression'Left <$> (singleP LBitShiftLeft *> cAdditiveExpressionP) <*>
       cShiftExpressionP'
     , CShiftExpression'Right <$>
@@ -295,14 +281,13 @@ cShiftExpressionP' =
     , pure CShiftExpression'Empty
     ]
 
-cRelationalExpressionP :: PEParser CRelationalExpression
+cRelationalExpressionP :: Parser CRelationalExpression
 cRelationalExpressionP =
-  parseElementP $
   CRelationalExpression <$> cShiftExpressionP <*> cRelationalExpressionP'
 
-cRelationalExpressionP' :: PEParser CRelationalExpression'
+cRelationalExpressionP' :: Parser CRelationalExpression'
 cRelationalExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CRelationalExpression'LT <$> (singleP LLT *> cShiftExpressionP) <*>
       cRelationalExpressionP'
     , CRelationalExpression'LTE <$> (singleP LLTE *> cShiftExpressionP) <*>
@@ -314,14 +299,13 @@ cRelationalExpressionP' =
     , pure CRelationalExpression'Empty
     ]
 
-cEqualityExpressionP :: PEParser CEqualityExpression
+cEqualityExpressionP :: Parser CEqualityExpression
 cEqualityExpressionP =
-  parseElementP $
   CEqualityExpression <$> cRelationalExpressionP <*> cEqualityExpressionP'
 
-cEqualityExpressionP' :: PEParser CEqualityExpression'
+cEqualityExpressionP' :: Parser CEqualityExpression'
 cEqualityExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CEqualityExpression'EQ <$> (singleP LEquals *> cRelationalExpressionP) <*>
       cEqualityExpressionP'
     , CEqualityExpression'NEQ <$> (singleP LNotEquals *> cRelationalExpressionP) <*>
@@ -329,92 +313,88 @@ cEqualityExpressionP' =
     , pure CEqualityExpression'Empty
     ]
 
-cAndExpressionP :: PEParser CAndExpression
+cAndExpressionP :: Parser CAndExpression
 cAndExpressionP =
-  parseElementP $ CAndExpression <$> cEqualityExpressionP <*> cAndExpressionP'
+  CAndExpression <$> cEqualityExpressionP <*> cAndExpressionP'
 
-cAndExpressionP' :: PEParser CAndExpression'
+cAndExpressionP' :: Parser CAndExpression'
 cAndExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CAndExpression' <$> (singleP LAmp *> cEqualityExpressionP) <*>
       cAndExpressionP'
     , pure CAndExpression'Empty
     ]
 
-cExclusiveOrExpressionP :: PEParser CExclusiveOrExpression
+cExclusiveOrExpressionP :: Parser CExclusiveOrExpression
 cExclusiveOrExpressionP =
-  parseElementP $
   CExclusiveOrExpression <$> cAndExpressionP <*> cExclusiveOrExpressionP'
 
-cExclusiveOrExpressionP' :: PEParser CExclusiveOrExpression'
+cExclusiveOrExpressionP' :: Parser CExclusiveOrExpression'
 cExclusiveOrExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CExclusiveOrExpression' <$> (singleP LBitwiseXor *> cAndExpressionP) <*>
       cExclusiveOrExpressionP'
     , pure CExclusiveOrExpression'Empty
     ]
 
-cInclusiveOrExpressionP :: PEParser CInclusiveOrExpression
+cInclusiveOrExpressionP :: Parser CInclusiveOrExpression
 cInclusiveOrExpressionP =
-  parseElementP $
   CInclusiveOrExpression <$> cExclusiveOrExpressionP <*>
   cInclusiveOrExpressionP'
 
-cInclusiveOrExpressionP' :: PEParser CInclusiveOrExpression'
+cInclusiveOrExpressionP' :: Parser CInclusiveOrExpression'
 cInclusiveOrExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CInclusiveOrExpression' <$>
       (singleP LBitwiseOr *> cExclusiveOrExpressionP) <*>
       cInclusiveOrExpressionP'
     , pure CInclusiveOrExpression'Empty
     ]
 
-cLogicalAndExpressionP :: PEParser CLogicalAndExpression
+cLogicalAndExpressionP :: Parser CLogicalAndExpression
 cLogicalAndExpressionP =
-  parseElementP $
   CLogicalAndExpression <$> cInclusiveOrExpressionP <*> cLogicalAndExpressionP'
 
-cLogicalAndExpressionP' :: PEParser CLogicalAndExpression'
+cLogicalAndExpressionP' :: Parser CLogicalAndExpression'
 cLogicalAndExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CLogicalAndExpression' <$> (singleP LAnd *> cInclusiveOrExpressionP) <*>
       cLogicalAndExpressionP'
     , pure CLogicalAndExpression'Empty
     ]
 
-cLogicalOrExpressionP :: PEParser CLogicalOrExpression
+cLogicalOrExpressionP :: Parser CLogicalOrExpression
 cLogicalOrExpressionP =
-  parseElementP $
   CLogicalOrExpression <$> cLogicalAndExpressionP <*> cLogicalOrExpressionP'
 
-cLogicalOrExpressionP' :: PEParser CLogicalOrExpression'
+cLogicalOrExpressionP' :: Parser CLogicalOrExpression'
 cLogicalOrExpressionP' =
-  parseElementUnion
+  parserUnion
     [ CLogicalOrExpression' <$> (singleP LOr *> cLogicalAndExpressionP) <*>
       cLogicalOrExpressionP'
     , pure CLogicalOrExpression'Empty
     ]
 
-cConditionalExpressionP :: PEParser CConditionalExpression
+cConditionalExpressionP :: Parser CConditionalExpression
 cConditionalExpressionP =
-  parseElementUnion
+  parserUnion
     [ CConditionalExpression <$> cLogicalOrExpressionP <*>
       (singleP LTernary *> cExpressionP <* singleP LColon) <*>
       cConditionalExpressionP
     , CConditionalExpressionSingleton <$> cLogicalOrExpressionP
     ]
 
-cAssignmentExpressionP :: PEParser CAssignmentExpression
+cAssignmentExpressionP :: Parser CAssignmentExpression
 cAssignmentExpressionP =
-  parseElementUnion
+  parserUnion
     [ CAssignmentExpression <$> cUnaryExpressionP <*> cAssignmentOperatorP <*>
       cAssignmentExpressionP
     , CAssignmentExpressionSingleton <$> cConditionalExpressionP
     ]
 
-cAssignmentOperatorP :: PEParser CAssignmentOperator
+cAssignmentOperatorP :: Parser CAssignmentOperator
 cAssignmentOperatorP =
-  parseElementUnion
+  parserUnion
     [ CAssignmentOperatorAssign <$ singleP LAssign
     , CAssignmentOperatorMul <$ singleP LMultiplicationAssign
     , CAssignmentOperatorDiv <$ singleP LDivisionAssign
@@ -428,27 +408,25 @@ cAssignmentOperatorP =
     , CAssignmentOperatorOr <$ singleP LBitwiseOrAssign
     ]
 
-cExpressionP :: PEParser CExpression
+cExpressionP :: Parser CExpression
 cExpressionP =
-  parseElementP $ CExpression <$> cAssignmentExpressionP <*> cExpressionP'
+  CExpression <$> cAssignmentExpressionP <*> cExpressionP'
 
-cExpressionP' :: PEParser CExpression'
+cExpressionP' :: Parser CExpression'
 cExpressionP' =
-  parseElementP $
   CExpression' <$> (singleP LComma *> cAssignmentExpressionP) <*> cExpressionP'
 
-cConstantExpressionP :: PEParser CConstantExpression
+cConstantExpressionP :: Parser CConstantExpression
 cConstantExpressionP =
-  parseElementP $ CConstantExpression <$> cConditionalExpressionP
+  CConstantExpression <$> cConditionalExpressionP
 
-cDeclarationP :: PEParser CDeclaration
+cDeclarationP :: Parser CDeclaration
 cDeclarationP =
-  parseElementP $
   CDeclaration <$> cDeclarationSpecifiersP <*> cInitDeclaratorListOptionalP
 
-cDeclarationSpecifiersP :: PEParser CDeclarationSpecifiers
+cDeclarationSpecifiersP :: Parser CDeclarationSpecifiers
 cDeclarationSpecifiersP =
-  parseElementUnion
+  parserUnion
     [ CDeclarationSpecifiersStorageClass <$> cStorageClassSpecifierP <*>
       cDeclarationSpecifiersOptionalP
     , CDeclarationSpecifiersTypeSpecifier <$> cTypeSpecifierP <*>
@@ -457,29 +435,28 @@ cDeclarationSpecifiersP =
       cDeclarationSpecifiersOptionalP
     ]
 
-cInitDeclaratorListP :: PEParser CInitDeclaratorList
+cInitDeclaratorListP :: Parser CInitDeclaratorList
 cInitDeclaratorListP =
-  parseElementP $
   CInitDeclaratorList <$> cInitDeclaratorP <*> cInitDeclaratorListP'
 
-cInitDeclaratorListP' :: PEParser CInitDeclaratorList'
+cInitDeclaratorListP' :: Parser CInitDeclaratorList'
 cInitDeclaratorListP' =
-  parseElementUnion
+  parserUnion
     [ CInitDeclaratorList' <$> (singleP LComma *> cInitDeclaratorP) <*>
       cInitDeclaratorListP'
     , pure CInitDeclaratorList'Empty
     ]
 
-cInitDeclaratorP :: PEParser CInitDeclarator
+cInitDeclaratorP :: Parser CInitDeclarator
 cInitDeclaratorP =
-  parseElementUnion
+  parserUnion
     [ CInitDeclarator <$> cDeclaratorP <*> (singleP LAssign *> cInitializerP)
     , CInitDeclaratorSingleton <$> cDeclaratorP
     ]
 
-cStorageClassSpecifierP :: PEParser CStorageClassSpecifier
+cStorageClassSpecifierP :: Parser CStorageClassSpecifier
 cStorageClassSpecifierP =
-  parseElementUnion
+  parserUnion
     [ CStorageClassSpecifierTypedef <$ singleP LTypedef
     , CStorageClassSpecifierExtern <$ singleP LExtern
     , CStorageClassSpecifierStatic <$ singleP LStatic
@@ -487,9 +464,9 @@ cStorageClassSpecifierP =
     , CStorageClassSpecifierRegister <$ singleP LRegister
     ]
 
-cTypeSpecifierP :: PEParser CTypeSpecifier
+cTypeSpecifierP :: Parser CTypeSpecifier
 cTypeSpecifierP =
-  parseElementUnion
+  parserUnion
     [ CTypeSpecifierVoid <$ singleP LVoid
     , CTypeSpecifierChar <$ singleP LChar
     , CTypeSpecifierShort <$ singleP LShort
@@ -504,113 +481,110 @@ cTypeSpecifierP =
     , CTypeSpecifierTypedef <$> cTypedefNameP
     ]
 
-cStructOrUnionSpecifierP :: PEParser CStructOrUnionSpecifier
+cStructOrUnionSpecifierP :: Parser CStructOrUnionSpecifier
 cStructOrUnionSpecifierP =
-  parseElementUnion
+  parserUnion
     [ CStructOrUnionSpecifierList <$> cStructOrUnionP <*> cIdentifierOptionalP <*>
       (singleP LBraceOpen *> cStructDeclarationListP <* singleP LBraceClose)
     , CStructOrUnionSpecifier <$> cStructOrUnionP <*> cIdentifierP
     ]
 
-cStructOrUnionP :: PEParser CStructOrUnion
+cStructOrUnionP :: Parser CStructOrUnion
 cStructOrUnionP =
-  parseElementUnion
-    [CStruct <$ singleP LStruct, CUnion <$ singleP LUnion]
+  parserUnion [CStruct <$ singleP LStruct, CUnion <$ singleP LUnion]
 
-cStructDeclarationListP :: PEParser CStructDeclarationList
+cStructDeclarationListP :: Parser CStructDeclarationList
 cStructDeclarationListP =
-  parseElementUnion
+  parserUnion
     [ CStructDeclarationList <$> cStructDeclarationP <*> cStructDeclarationListP
     , CStructDeclarationListSingleton <$> cStructDeclarationP
     ]
 
-cStructDeclarationP :: PEParser CStructDeclaration
+cStructDeclarationP :: Parser CStructDeclaration
 cStructDeclarationP =
-  parseElementP $
   CStructDeclaration <$> cSpecifierQualifierListP <*>
   (cStructDeclaratorListP <* singleP LSemiColon)
 
-cSpecifierQualifierListP :: PEParser CSpecifierQualifierList
+cSpecifierQualifierListP :: Parser CSpecifierQualifierList
 cSpecifierQualifierListP =
-  parseElementUnion
+  parserUnion
     [ CSpecifierQualifierListSpecifier <$> cTypeSpecifierP <*>
       cSpecifierQualifierListOptionalP
     , CSpecifierQualifierListQualifier <$> cTypeQualifierP <*>
       cSpecifierQualifierListOptionalP
     ]
 
-cStructDeclaratorListP :: PEParser CStructDeclaratorList
+cStructDeclaratorListP :: Parser CStructDeclaratorList
 cStructDeclaratorListP =
-  parseElementP $
   CStructDeclaratorList <$> cStructDeclaratorP <*> cStructDeclaratorListP'
 
-cStructDeclaratorListP' :: PEParser CStructDeclaratorList'
+cStructDeclaratorListP' :: Parser CStructDeclaratorList'
 cStructDeclaratorListP' =
-  parseElementUnion
+  parserUnion
     [ CStructDeclaratorList' <$> (singleP LComma *> cStructDeclaratorP) <*>
       cStructDeclaratorListP'
     , pure CStructDeclaratorList'Empty
     ]
 
-cStructDeclaratorP :: PEParser CStructDeclarator
+cStructDeclaratorP :: Parser CStructDeclarator
 cStructDeclaratorP =
-  parseElementUnion
+  parserUnion
     [ CStructDeclaratorInit <$> cDeclaratorOptionalP <*>
       (singleP LColon *> cConstantExpressionP)
     , CStructDeclarator <$> cDeclaratorP
     ]
 
-cEnumSpecifierP :: PEParser CEnumSpecifier
+cEnumSpecifierP :: Parser CEnumSpecifier
 cEnumSpecifierP =
-  parseElementUnion
+  parserUnion
     [ CEnumSpecifierList <$> (singleP LEnum *> cIdentifierOptionalP) <*>
       (singleP LBraceOpen *> cEnumeratorListP <* singleP LBraceClose)
     , CEnumSpecifier <$> (singleP LEnum *> cIdentifierP)
     ]
 
-cEnumeratorListP :: PEParser CEnumeratorList
+cEnumeratorListP :: Parser CEnumeratorList
 cEnumeratorListP =
-  parseElementP $ CEnumeratorList <$> cEnumeratorP <*> cEnumeratorListP'
+  CEnumeratorList <$> cEnumeratorP <*> cEnumeratorListP'
 
-cEnumeratorListP' :: PEParser CEnumeratorList'
+cEnumeratorListP' :: Parser CEnumeratorList'
 cEnumeratorListP' =
-  parseElementUnion
+  parserUnion
     [ CEnumeratorList' <$> (singleP LComma *> cEnumeratorP) <*>
       cEnumeratorListP'
     , pure CEnumeratorList'Empty
     ]
 
-cEnumeratorP :: PEParser CEnumerator
+cEnumeratorP :: Parser CEnumerator
 cEnumeratorP =
-  parseElementUnion
+  parserUnion
     [ CEnumeratorAssign <$> cEnumerationConstantP <*>
       (singleP LAssign *> cConstantExpressionP)
     , CEnumerator <$> cEnumerationConstantP
     ]
 
-cTypeQualifierP :: PEParser CTypeQualifier
+cTypeQualifierP :: Parser CTypeQualifier
 cTypeQualifierP =
-  parseElementUnion
+  parserUnion
     [ CTypeQualifierConst <$ singleP LConst
     , CTypeQualifierVolatile <$ singleP LVolatile
     ]
 
-cDeclaratorP :: PEParser CDeclarator
+cDeclaratorP :: Parser CDeclarator
 cDeclaratorP =
-  parseElementP $ CDeclarator <$> cPointerOptionalP <*> cDirectDeclaratorP
+  CDeclarator <$> cPointerOptionalP <*> cDirectDeclaratorP
 
-cDirectDeclaratorP :: PEParser CDirectDeclarator
+cDirectDeclaratorP :: Parser CDirectDeclarator
 cDirectDeclaratorP =
-  parseElementUnion
+  parserUnion
     [ CDirectDeclaratorParen <$>
       (singleP LParenthesisOpen *> cDeclaratorP <* singleP LParenthesisClose) <*>
       cDirectDeclaratorP'
     , CDirectDeclaratorId <$> cIdentifierP <*> cDirectDeclaratorP'
     ]
 
-cDirectDeclaratorP' :: PEParser CDirectDeclarator'
+cDirectDeclaratorP' :: Parser CDirectDeclarator'
 cDirectDeclaratorP' =
-  parseElementUnion
+  parserUnion
     [ CDirectDeclarator'Indexed <$>
       (singleP LBracketOpen *> cConstantExpressionOptionalP <*
        singleP LBracketClose) <*>
@@ -626,77 +600,76 @@ cDirectDeclaratorP' =
     , pure CDirectDeclarator'Empty
     ]
 
-cPointerP :: PEParser CPointer
+cPointerP :: Parser CPointer
 cPointerP =
-  parseElementUnion
+  parserUnion
     [ CPointerMulti <$> (singleP LStar *> cTypeQualifierListOptionalP) <*>
       cPointerP
     , CPointerSingle <$> (singleP LStar *> cTypeQualifierListOptionalP)
     ]
 
-cTypeQualifierListP :: PEParser CTypeQualifierList
+cTypeQualifierListP :: Parser CTypeQualifierList
 cTypeQualifierListP =
-  parseElementUnion
+  parserUnion
     [ CTypeQualifierList <$> cTypeQualifierP <*> cTypeQualifierListP
     , CTypeQualifierListSingleton <$> cTypeQualifierP
     ]
 
-cParameterTypeListP :: PEParser CParameterTypeList
+cParameterTypeListP :: Parser CParameterTypeList
 cParameterTypeListP =
-  parseElementUnion
+  parserUnion
     [ CParameterTypeListVarargs <$>
       (cParameterListP <* singleP LComma <* singleP LVarargs)
     , CParameterTypeList <$> cParameterListP
     ]
 
-cParameterListP :: PEParser CParameterList
+cParameterListP :: Parser CParameterList
 cParameterListP =
-  parseElementP $ CParameterList <$> cParameterDeclarationP <*> cParameterListP'
+  CParameterList <$> cParameterDeclarationP <*> cParameterListP'
 
-cParameterListP' :: PEParser CParameterList'
+cParameterListP' :: Parser CParameterList'
 cParameterListP' =
-  parseElementUnion
+  parserUnion
     [ CParameterList' <$> (singleP LComma *> cParameterDeclarationP) <*>
       cParameterListP'
     , pure CParameterList'Empty
     ]
 
-cParameterDeclarationP :: PEParser CParameterDeclaration
+cParameterDeclarationP :: Parser CParameterDeclaration
 cParameterDeclarationP =
-  parseElementUnion
+  parserUnion
     [ CParameterDeclaration <$> cDeclarationSpecifiersP <*> cDeclaratorP
     , CParameterDeclarationAbstract <$> cDeclarationSpecifiersP <*>
       cAbstractDeclaratorOptionalP
     ]
 
-cIdentifierListP :: PEParser CIdentifierList
+cIdentifierListP :: Parser CIdentifierList
 cIdentifierListP =
-  parseElementP $ CIdentifierList <$> cIdentifierP <*> cIdentifierListP'
+  CIdentifierList <$> cIdentifierP <*> cIdentifierListP'
 
-cIdentifierListP' :: PEParser CIdentifierList'
+cIdentifierListP' :: Parser CIdentifierList'
 cIdentifierListP' =
-  parseElementUnion
+  parserUnion
     [ CIdentifierList' <$> (singleP LComma *> cIdentifierP) <*>
       cIdentifierListP'
     , pure CIdentifierList'Empty
     ]
 
-cTypeNameP :: PEParser CTypeName
+cTypeNameP :: Parser CTypeName
 cTypeNameP =
-  parseElementP $
   CTypeName <$> cSpecifierQualifierListP <*> cAbstractDeclaratorOptionalP
 
-cAbstractDeclaratorP :: PEParser CAbstractDeclarator
+cAbstractDeclaratorP :: Parser CAbstractDeclarator
 cAbstractDeclaratorP =
-  parseElementUnion
+  parserUnion
     [ CAbstractDeclaratorDirect <$> cPointerOptionalP <*>
       cDirectAbstractDeclaratorP
     , CAbstractDeclaratorPointer <$> cPointerP
     ]
 
-cDirectAbstractDeclaratorP :: PEParser CDirectAbstractDeclarator
+cDirectAbstractDeclaratorP :: Parser CDirectAbstractDeclarator
 cDirectAbstractDeclaratorP =
-  parseElementUnion
+  parserUnion
     [ CDirectAbstractDeclaratorParens <$>
       (singleP LParenthesisOpen *> cAbstractDeclaratorP <*
        singleP LParenthesisClose) <*>
@@ -711,9 +684,9 @@ cDirectAbstractDeclaratorP =
       cDirectAbstractDeclaratorP'
     ]
 
-cDirectAbstractDeclaratorP' :: PEParser CDirectAbstractDeclarator'
+cDirectAbstractDeclaratorP' :: Parser CDirectAbstractDeclarator'
 cDirectAbstractDeclaratorP' =
-  parseElementUnion
+  parserUnion
     [ CDirectAbstractDeclarator'Const <$>
       (singleP LBracketOpen *> cConstantExpressionOptionalP <*
        singleP LBracketClose)
@@ -722,12 +695,12 @@ cDirectAbstractDeclaratorP' =
        singleP LParenthesisClose)
     ]
 
-cTypedefNameP :: PEParser CTypedefName
-cTypedefNameP = parseElementP $ CTypedefName <$> cIdentifierP
+cTypedefNameP :: Parser CTypedefName
+cTypedefNameP = CTypedefName <$> cIdentifierP
 
-cInitializerP :: PEParser CInitializer
+cInitializerP :: Parser CInitializer
 cInitializerP =
-  parseElementUnion
+  parserUnion
     [ CInitializerBracketListComma <$>
       (singleP LBraceOpen *> cInitializerListP <* singleP LComma <*
        singleP LBraceClose)
@@ -736,21 +709,21 @@ cInitializerP =
     , CInitializerAssignment <$> cAssignmentExpressionP
     ]
 
-cInitializerListP :: PEParser CInitializerList
+cInitializerListP :: Parser CInitializerList
 cInitializerListP =
-  parseElementP $ CInitializerList <$> cInitializerP <*> cInitializerListP'
+  CInitializerList <$> cInitializerP <*> cInitializerListP'
 
-cInitializerListP' :: PEParser CInitializerList'
+cInitializerListP' :: Parser CInitializerList'
 cInitializerListP' =
-  parseElementUnion
+  parserUnion
     [ CInitializerList' <$> (singleP LComma *> cInitializerP) <*>
       cInitializerListP'
     , pure CInitializerList'Empty
     ]
 
-cStatementP :: PEParser CStatement
+cStatementP :: Parser CStatement
 cStatementP =
-  parseElementUnion
+  parserUnion
     [ CStatementLabeled <$> cLabeledStatementP
     , CStatementCompound <$> cCompoundStatementP
     , CStatementExpression <$> cExpressionStatementP
@@ -759,9 +732,9 @@ cStatementP =
     , CStatementJump <$> cJumpStatementP
     ]
 
-cLabeledStatementP :: PEParser CLabeledStatement
+cLabeledStatementP :: Parser CLabeledStatement
 cLabeledStatementP =
-  parseElementUnion
+  parserUnion
     [ CLabeledStatementDefault <$>
       (singleP LDefault *> singleP LColon *> cStatementP)
     , CLabeledStatementCase <$>
@@ -770,34 +743,32 @@ cLabeledStatementP =
     , CLabeledStatementId <$> cIdentifierP <*> (singleP LColon *> cStatementP)
     ]
 
-cCompoundStatementP :: PEParser CCompoundStatement
+cCompoundStatementP :: Parser CCompoundStatement
 cCompoundStatementP =
-  parseElementP $
   CCompoundStatement <$> (singleP LBraceOpen *> cDeclarationListOptionalP) <*>
   (cStatementListOptionalP <* singleP LBraceClose)
 
-cDeclarationListP :: PEParser CDeclarationList
+cDeclarationListP :: Parser CDeclarationList
 cDeclarationListP =
-  parseElementUnion
+  parserUnion
     [ CDeclarationList <$> cDeclarationP <*> cDeclarationListP
     , CDeclarationListSingleton <$> cDeclarationP
     ]
 
-cStatementListP :: PEParser CStatementList
+cStatementListP :: Parser CStatementList
 cStatementListP =
-  parseElementUnion
+  parserUnion
     [ CStatementList <$> cStatementP <*> cStatementListP
     , CStatementListSingleton <$> cStatementP
     ]
 
-cExpressionStatementP :: PEParser CExpressionStatement
+cExpressionStatementP :: Parser CExpressionStatement
 cExpressionStatementP =
-  parseElementP $
   CExpressionStatement <$> (cExpressionOptionalP <* singleP LSemiColon)
 
-cSelectionStatementP :: PEParser CSelectionStatement
+cSelectionStatementP :: Parser CSelectionStatement
 cSelectionStatementP =
-  parseElementUnion
+  parserUnion
     [ CSelectionStatementSwitch <$>
       (singleP LSwitch *> singleP LParenthesisOpen *> cExpressionP <*
        singleP LParenthesisClose) <*>
@@ -813,9 +784,9 @@ cSelectionStatementP =
       cStatementP
     ]
 
-cIterationStatementP :: PEParser CIterationStatement
+cIterationStatementP :: Parser CIterationStatement
 cIterationStatementP =
-  parseElementUnion
+  parserUnion
     [ CIterationStatementWhile <$>
       (singleP LWhile *> singleP LParenthesisOpen *> cExpressionP <*
        singleP LParenthesisClose) <*>
@@ -831,9 +802,9 @@ cIterationStatementP =
       cStatementP
     ]
 
-cJumpStatementP :: PEParser CJumpStatement
+cJumpStatementP :: Parser CJumpStatement
 cJumpStatementP =
-  parseElementUnion
+  parserUnion
     [ CJumpStatementGoto <$>
       (singleP LGoto *> cIdentifierP <* singleP LSemiColon)
     , CJumpStatementContinue <$ (singleP LContinue <* singleP LSemiColon)
@@ -842,122 +813,123 @@ cJumpStatementP =
       (singleP LReturn *> cExpressionOptionalP <* singleP LSemiColon)
     ]
 
-cTranslationUnitP :: PEParser CTranslationUnit
+cTranslationUnitP :: Parser CTranslationUnit
 cTranslationUnitP =
-  parseElementUnion
+  parserUnion
     [ CTranslationUnitTranslation <$> cExternalDeclarationP <*>
       cTranslationUnitP
     , CTranslationUnitExternal <$> cExternalDeclarationP
     ]
 
-cExternalDeclarationP :: PEParser CExternalDeclaration
+cExternalDeclarationP :: Parser CExternalDeclaration
 cExternalDeclarationP =
-  parseElementUnion
+  parserUnion
     [ CExternalDeclarationFunction <$> cFunctionDefinitionP
     , CExternalDeclaration <$> cDeclarationP
     ]
 
-cFunctionDefinitionP :: PEParser CFunctionDefinition
+cFunctionDefinitionP :: Parser CFunctionDefinition
 cFunctionDefinitionP =
-  parseElementUnion
+  parserUnion
     [ CFunctionDefinitionSpecifiers <$> cDeclarationSpecifiersOptionalP <*>
       cDeclaratorP
     , CFunctionDefinitionList <$> cDeclarationListOptionalP <*>
       cCompoundStatementP
     ]
 
-cDeclarationListOptionalP :: PEParser CDeclarationListOptional
+cDeclarationListOptionalP :: Parser CDeclarationListOptional
 cDeclarationListOptionalP =
-  parseElementUnion
+  parserUnion
     [ CDeclarationListOptional <$> cDeclarationListP
     , pure CDeclarationListOptionalEmpty
     ]
 
-cDeclarationSpecifiersOptionalP :: PEParser CDeclarationSpecifiersOptional
+cDeclarationSpecifiersOptionalP :: Parser CDeclarationSpecifiersOptional
 cDeclarationSpecifiersOptionalP =
-  parseElementUnion
+  parserUnion
     [ CDeclarationSpecifiersOptional <$> cDeclarationSpecifiersP
     , pure CDeclarationSpecifiersOptionalEmpty
     ]
 
-cExpressionOptionalP :: PEParser CExpressionOptional
+cExpressionOptionalP :: Parser CExpressionOptional
 cExpressionOptionalP =
-  parseElementUnion
+  parserUnion
     [CExpressionOptional <$> cExpressionP, pure CExpressionOptionalEmpty]
 
-cStatementListOptionalP :: PEParser CStatementListOptional
+cStatementListOptionalP :: Parser CStatementListOptional
 cStatementListOptionalP =
-  parseElementUnion
+  parserUnion
     [ CStatementListOptional <$> cStatementListP
     , pure CStatementListOptionalEmpty
     ]
 
-cParameterTypeListOptionalP :: PEParser CParameterTypeListOptional
+cParameterTypeListOptionalP :: Parser CParameterTypeListOptional
 cParameterTypeListOptionalP =
-  parseElementUnion
+  parserUnion
     [ CParameterTypeListOptional <$> cParameterTypeListP
     , pure CParameterTypeListOptionalEmpty
     ]
 
-cConstantExpressionOptionalP :: PEParser CConstantExpressionOptional
+cConstantExpressionOptionalP :: Parser CConstantExpressionOptional
 cConstantExpressionOptionalP =
-  parseElementUnion
+  parserUnion
     [ CConstantExpressionOptional <$> cConstantExpressionP
     , pure CConstantExpressionOptionalEmpty
     ]
 
-cPointerOptionalP :: PEParser CPointerOptional
+cPointerOptionalP :: Parser CPointerOptional
 cPointerOptionalP =
-  parseElementUnion [CPointerOptional <$> cPointerP, pure CPointerOptionalEmpty]
+  parserUnion [CPointerOptional <$> cPointerP, pure CPointerOptionalEmpty]
 
-cAbstractDeclaratorOptionalP :: PEParser CAbstractDeclaratorOptional
+cAbstractDeclaratorOptionalP :: Parser CAbstractDeclaratorOptional
 cAbstractDeclaratorOptionalP =
-  parseElementUnion
+  parserUnion
     [ CAbstractDeclaratorOptional <$> cAbstractDeclaratorP
     , pure CAbstractDeclaratorOptionalEmpty
     ]
 
-cTypeQualifierListOptionalP :: PEParser CTypeQualifierListOptional
+cTypeQualifierListOptionalP :: Parser CTypeQualifierListOptional
 cTypeQualifierListOptionalP =
-  parseElementUnion
+  parserUnion
     [ CTypeQualifierListOptional <$> cTypeQualifierListP
     , pure CTypeQualifierListOptionalEmpty
     ]
 
-cIdentifierListOptionalP :: PEParser CIdentifierListOptional
+cIdentifierListOptionalP :: Parser CIdentifierListOptional
 cIdentifierListOptionalP =
-  parseElementUnion
+  parserUnion
     [ CIdentifierListOptional <$> cIdentifierListP
     , pure CIdentifierListOptionalEmpty
     ]
 
-cIdentifierOptionalP :: PEParser CIdentifierOptional
+cIdentifierOptionalP :: Parser CIdentifierOptional
 cIdentifierOptionalP =
-  parseElementUnion
+  parserUnion
     [CIdentifierOptional <$> cIdentifierP, pure CIdentifierOptionalEmpty]
 
-cDeclaratorOptionalP :: PEParser CDeclaratorOptional
+cDeclaratorOptionalP :: Parser CDeclaratorOptional
 cDeclaratorOptionalP =
-  parseElementUnion
+  parserUnion
     [CDeclaratorOptional <$> cDeclaratorP, pure CDeclaratorOptionalEmpty]
 
-cSpecifierQualifierListOptionalP :: PEParser CSpecifierQualifierListOptional
+cSpecifierQualifierListOptionalP :: Parser CSpecifierQualifierListOptional
 cSpecifierQualifierListOptionalP =
-  parseElementUnion
+  parserUnion
     [ CSpecifierQualifierListOptional <$> cSpecifierQualifierListP
     , pure CSpecifierQualifierListOptionalEmpty
     ]
 
-cInitDeclaratorListOptionalP :: PEParser CInitDeclaratorListOptional
+cInitDeclaratorListOptionalP :: Parser CInitDeclaratorListOptional
 cInitDeclaratorListOptionalP =
-  parseElementUnion
+  parserUnion
     [ CInitDeclaratorListOptional <$> cInitDeclaratorListP
     , pure CInitDeclaratorListOptionalEmpty
     ]
 
-cArgumentExpressionListOptionalP :: PEParser CArgumentExpressionListOptional
+cArgumentExpressionListOptionalP :: Parser CArgumentExpressionListOptional
 cArgumentExpressionListOptionalP =
-  parseElementUnion
+  parserUnion
     [ CArgumentExpressionListOptional <$> cArgumentExpressionListP
     , pure CArgumentExpressionListOptionalEmpty
     ]
+
