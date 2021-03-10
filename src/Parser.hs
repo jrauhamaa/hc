@@ -7,8 +7,8 @@ strategy : each parser tries each possible option
 -}
 module Parser where
 
-import Data.List
 import Data.Either
+import Data.List
 
 import Lexeme (CLexeme(..))
 import ParseElements
@@ -19,58 +19,42 @@ import Scanner (Coordinates, ScanElement(..))
 -----------
 type Input = [ScanElement CLexeme]
 
-type ParseOutput a = Either ParseError [(Input, ParseElement a)]
+type ParseOutput a = Either ParseError [(Input, a)]
 
 newtype Parser a =
   Parser
     { runParser :: Input -> ParseOutput a
     }
 
-data ParseError =
-  ParseError
-    { errorLoc :: Coordinates
-    , errorMsg :: String
-    }
+newtype ParseError =
+  ParseError String
   deriving (Eq, Show)
 
 instance Functor Parser where
-  fmap fab pa = Parser $ (fmap . fmap . fmap . fmap) fab . runParser pa
+  fmap fab pa = Parser $ (fmap . fmap . fmap) fab . runParser pa
 
 instance Applicative Parser where
-  pure x = Parser $ \input -> Right [(input, ParseElement (getLoc input) x)]
+  pure x = Parser $ \input -> Right [(input, x)]
   p1 <*> p2 =
     Parser $ \input -> do
       rab <- runParser p1 input
-      collectOutput $ map
-        (\(input', ParseElement _ fab) ->
-          runParser (fab <$> p2) input')
-        rab
-
-{-
+      collectOutput $ map (\(input', fab) -> runParser (fab <$> p2) input') rab
 
 -- CTranslationUnit is the root element in the grammar
 cParser :: Parser CTranslationUnit
-cParser =
-  Parser $ \input ->
-    case runParser cTranslationUnitP input of
-      e@(Left _) -> e
-      r@(Right ([], _)) -> r
-      r@(Right (notParsed:_, _)) -> r
-      --  Left $
-      --  ParseError (fst $ notParsed) "Parsing terminated prematurely"
--}
+cParser = Parser $ \input -> do
+  results <- runParser cTranslationUnitP input
+  case head $ sortBy (\a b -> compare (length $ fst a) (length $ fst b)) $ results of
+    r@([], _) -> Right [r]
+    _ -> Left $ ParseError "Unable to parse entire file"
 
 -----------
 -- UTILS --
 -----------
-getLoc :: Input -> Coordinates
-getLoc [] = (0, 0)
-getLoc i = scanLoc $ head i
-
 collectOutput :: [ParseOutput a] -> ParseOutput a
 collectOutput p =
   if length successful == 0
-    then maximumBy (\(Left (ParseError c1 _)) (Left (ParseError c2 _)) -> compare c1 c2) p
+    then Left $ ParseError "error"
     else concat <$> sequenceA successful
   where
     successful = filter isRight p
@@ -80,65 +64,63 @@ parserUnion parsers =
   Parser $ \input -> collectOutput $ map (\p -> runParser p input) parsers
 
 unexpectedEof :: ParseError
-unexpectedEof = ParseError (0, 0) "Unexpected EOF"
+unexpectedEof = ParseError "Unexpected EOF"
 
-unexpectedLexeme :: Coordinates -> String -> String -> ParseError
-unexpectedLexeme c expected encountered =
-  ParseError c $
+unexpectedLexeme :: String -> String -> ParseError
+unexpectedLexeme expected encountered =
+  ParseError $
   mconcat ["Expected ", expected, ". Instead encountered ", encountered, "."]
 
 ------------------------
 -- ELEMENTARY PARSERS --
 ------------------------
-
 singleP :: CLexeme -> Parser CLexeme
 singleP l =
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement c lexeme):rest) ->
+    ((ScanElement _ lexeme):rest) ->
       if lexeme == l
-        then Right [(rest, ParseElement c l)]
-        else Left $ unexpectedLexeme c (show l) (show lexeme)
+        then Right [(rest, l)]
+        else Left $ unexpectedLexeme (show l) (show lexeme)
 
 intLiteralP :: Parser Int
 intLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement c (LIntLiteral x)):rest) -> Right [(rest, ParseElement c x)]
-    ((ScanElement c l):_) -> Left $ unexpectedLexeme c "LIntLiteral" $ show l
+    ((ScanElement _ (LIntLiteral x)):rest) -> Right [(rest, x)]
+    ((ScanElement _ l):_) -> Left $ unexpectedLexeme "LIntLiteral" $ show l
 
 floatLiteralP :: Parser Double
 floatLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement c (LFloatLiteral x)):rest) -> Right [(rest, ParseElement c x)]
-    ((ScanElement c l):_) -> Left $ unexpectedLexeme c "LFloatLiteral" $ show l
+    ((ScanElement _ (LFloatLiteral x)):rest) -> Right [(rest, x)]
+    ((ScanElement _ l):_) -> Left $ unexpectedLexeme "LFloatLiteral" $ show l
 
 charLiteralP :: Parser Char
 charLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement c (LCharLiteral x)):rest) -> Right [(rest, ParseElement c x)]
-    ((ScanElement c l):_) -> Left $ unexpectedLexeme c "LCharLiteral" $ show l
+    ((ScanElement _ (LCharLiteral x)):rest) -> Right [(rest, x)]
+    ((ScanElement _ l):_) -> Left $ unexpectedLexeme "LCharLiteral" $ show l
 
 stringLiteralP :: Parser String
 stringLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement c (LStringLiteral x)):rest) -> Right [(rest, ParseElement c x)]
-    ((ScanElement c l):_) -> Left $ unexpectedLexeme c "LStringLiteral" $ show l
+    ((ScanElement _ (LStringLiteral x)):rest) -> Right [(rest, x)]
+    ((ScanElement _ l):_) -> Left $ unexpectedLexeme "LStringLiteral" $ show l
 
 labelP :: Parser String
 labelP =
   Parser $ \case
     [] -> Left unexpectedEof
-    ((ScanElement c (LLabel x)):rest) -> Right [(rest, ParseElement c x)]
-    ((ScanElement c l):_) -> Left $ unexpectedLexeme c "LLabel" $ show l
+    ((ScanElement _ (LLabel x)):rest) -> Right [(rest, x)]
+    ((ScanElement _ l):_) -> Left $ unexpectedLexeme "LLabel" $ show l
 
 ---------------
 -- C PARSERS --
 ---------------
-
 cConstantP :: Parser CConstant
 cConstantP =
   parserUnion
@@ -314,8 +296,7 @@ cEqualityExpressionP' =
     ]
 
 cAndExpressionP :: Parser CAndExpression
-cAndExpressionP =
-  CAndExpression <$> cEqualityExpressionP <*> cAndExpressionP'
+cAndExpressionP = CAndExpression <$> cEqualityExpressionP <*> cAndExpressionP'
 
 cAndExpressionP' :: Parser CAndExpression'
 cAndExpressionP' =
@@ -409,16 +390,18 @@ cAssignmentOperatorP =
     ]
 
 cExpressionP :: Parser CExpression
-cExpressionP =
-  CExpression <$> cAssignmentExpressionP <*> cExpressionP'
+cExpressionP = CExpression <$> cAssignmentExpressionP <*> cExpressionP'
 
 cExpressionP' :: Parser CExpression'
 cExpressionP' =
-  CExpression' <$> (singleP LComma *> cAssignmentExpressionP) <*> cExpressionP'
+  parserUnion
+    [ CExpression' <$> (singleP LComma *> cAssignmentExpressionP) <*>
+      cExpressionP'
+    , pure CExpression'Empty
+    ]
 
 cConstantExpressionP :: Parser CConstantExpression
-cConstantExpressionP =
-  CConstantExpression <$> cConditionalExpressionP
+cConstantExpressionP = CConstantExpression <$> cConditionalExpressionP
 
 cDeclarationP :: Parser CDeclaration
 cDeclarationP =
@@ -543,8 +526,7 @@ cEnumSpecifierP =
     ]
 
 cEnumeratorListP :: Parser CEnumeratorList
-cEnumeratorListP =
-  CEnumeratorList <$> cEnumeratorP <*> cEnumeratorListP'
+cEnumeratorListP = CEnumeratorList <$> cEnumeratorP <*> cEnumeratorListP'
 
 cEnumeratorListP' :: Parser CEnumeratorList'
 cEnumeratorListP' =
@@ -570,8 +552,7 @@ cTypeQualifierP =
     ]
 
 cDeclaratorP :: Parser CDeclarator
-cDeclaratorP =
-  CDeclarator <$> cPointerOptionalP <*> cDirectDeclaratorP
+cDeclaratorP = CDeclarator <$> cPointerOptionalP <*> cDirectDeclaratorP
 
 cDirectDeclaratorP :: Parser CDirectDeclarator
 cDirectDeclaratorP =
@@ -624,8 +605,7 @@ cParameterTypeListP =
     ]
 
 cParameterListP :: Parser CParameterList
-cParameterListP =
-  CParameterList <$> cParameterDeclarationP <*> cParameterListP'
+cParameterListP = CParameterList <$> cParameterDeclarationP <*> cParameterListP'
 
 cParameterListP' :: Parser CParameterList'
 cParameterListP' =
@@ -644,8 +624,7 @@ cParameterDeclarationP =
     ]
 
 cIdentifierListP :: Parser CIdentifierList
-cIdentifierListP =
-  CIdentifierList <$> cIdentifierP <*> cIdentifierListP'
+cIdentifierListP = CIdentifierList <$> cIdentifierP <*> cIdentifierListP'
 
 cIdentifierListP' :: Parser CIdentifierList'
 cIdentifierListP' =
@@ -710,8 +689,7 @@ cInitializerP =
     ]
 
 cInitializerListP :: Parser CInitializerList
-cInitializerListP =
-  CInitializerList <$> cInitializerP <*> cInitializerListP'
+cInitializerListP = CInitializerList <$> cInitializerP <*> cInitializerListP'
 
 cInitializerListP' :: Parser CInitializerList'
 cInitializerListP' =
@@ -932,4 +910,3 @@ cArgumentExpressionListOptionalP =
     [ CArgumentExpressionListOptional <$> cArgumentExpressionListP
     , pure CArgumentExpressionListOptionalEmpty
     ]
-
