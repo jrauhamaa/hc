@@ -3,7 +3,7 @@ module Main where
 import System.IO
 
 import Lexeme (CLexeme(..))
-import Parser (Parser(..), cParser)
+import Parser (parseCCode)
 import Scanner (ScanElement(..), scanCCode)
 
 main :: IO ()
@@ -20,4 +20,4 @@ main = do
                | l <- scanElems
                , scanElem l `notElem` [LWhiteSpace, LComment]
                ]
-         return (runParser cParser fltrd))
+         return (parseCCode fltrd))
