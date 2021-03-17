@@ -97,5 +97,7 @@ data CLexeme
   | LWhiteSpace
   -- comment
   | LComment
+  -- end marker
+  | LEndMarker
   deriving (Show, Eq)
 

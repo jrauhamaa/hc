@@ -78,7 +78,7 @@ scanCCode' scanned input =
     Left e -> Left e
     Right (input', se) ->
       if snd input' == ""
-        then Right $ scanned <> [se]
+        then Right $ scanned <> [se, ScanElement (0, 0) LEndMarker]
         else scanCCode' (scanned <> [se]) input'
 
 cScanner :: Scanner CLexeme
