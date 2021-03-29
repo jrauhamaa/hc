@@ -137,9 +137,11 @@ data CStructOrUnion
   | CStructOrUnionUnion     -- union
   deriving (Show, Eq)
 
--- struct CDeclaration CStructDeclarationListOptional
+-- CStructDeclaration CStructDeclarationListOptional
 data CStructDeclarationList =
-  CStructDeclarationList (PE CDeclaration) (PE CStructDeclarationListOptional)
+  CStructDeclarationList
+    (PE CStructDeclaration)
+    (PE CStructDeclarationListOptional)
   deriving (Show, Eq)
 
 data CStructDeclarationListOptional
@@ -395,18 +397,10 @@ data CAbstractDeclaratorOptional
   | CAbstractDeclaratorOptional (PE CAbstractDeclarator)
   deriving (Show, Eq)
 
+-- ( CAbstractDeclarator ) CDirectAbstractDeclarator'
 data CDirectAbstractDeclarator
-  -- ( CAbstractDeclarator ) CDirectAbstractDeclarator'
-  = CDirectAbstractDeclaratorParens
+  = CDirectAbstractDeclarator
       (PE CAbstractDeclarator)
-      (PE CDirectAbstractDeclarator')
-  -- [ CConstantExpressionOptional ] CDirectAbstractDeclarator'
-  | CDirectAbstractDeclaratorConst
-      (PE CConstantExpressionOptional)
-      (PE CDirectAbstractDeclarator')
-  -- [ CParameterTypeListOptional ] CDirectAbstractDeclarator'
-  | CDirectAbstractDeclaratorParams
-      (PE CParameterTypeListOptional)
       (PE CDirectAbstractDeclarator')
   deriving (Show, Eq)
 
@@ -415,10 +409,12 @@ data CDirectAbstractDeclarator'
   = CDirectAbstractDeclarator'Const
       (PE CConstantExpressionOptional)
       (PE CDirectAbstractDeclarator')
-  -- [ CParameterTypeListOptional ] CDirectAbstractDeclarator'
+  -- ( CParameterTypeListOptional ) CDirectAbstractDeclarator'
   | CDirectAbstractDeclarator'Params
       (PE CParameterTypeListOptional)
       (PE CDirectAbstractDeclarator')
+  -- empty
+  | CDirectAbstractDeclarator'Empty
   deriving (Show, Eq)
 
 -- CIdentifier
@@ -586,7 +582,7 @@ data CLogicalOrExpression'
   | CLogicalOrExpression' (PE CLogicalAndExpression) (PE CLogicalOrExpression')
   deriving (Show, Eq)
 
--- CLogicalAndExpression CInclusiveOrExpression CLogicalAndExpression'
+-- CInclusiveOrExpression CLogicalAndExpression'
 data CLogicalAndExpression =
   CLogicalAndExpression (PE CInclusiveOrExpression) (PE CLogicalAndExpression')
   deriving (Show, Eq)
