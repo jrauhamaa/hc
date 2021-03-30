@@ -1,9 +1,9 @@
 {-# LANGUAGE LambdaCase #-}
 
 {-
-strategy : each parser tries each possible option
-           and returns a nonempty list of possible parse trees
-           or ParseError
+A recursive descent parser.
+CTranslationUnit becomes the root element of the AST.
+Expects a string of ScanElements terminted by LEndMarker
 -}
 module Parser where
 
@@ -51,8 +51,6 @@ instance Alternative Parser where
           e2@(Left (ParseError c2 _)) ->
             if c1 >= c2 then e1 else e2
 
-
-
 parseCCode :: Input -> Either ParseError (ParseElement CTranslationUnit)
 parseCCode input = do
   (_, result) <- runParser cParser input
@@ -85,6 +83,10 @@ unexpectedLexeme c expected encountered =
 ------------------------
 -- ELEMENTARY PARSERS --
 ------------------------
+
+failingP :: Parser a
+failingP =
+  Parser $ \_ -> Left $ ParseError (0, 0) "Error"
 
 singleP :: CLexeme -> Parser CLexeme
 singleP l =
@@ -142,6 +144,24 @@ bracketP p = singleP LBracketOpen *> p <* singleP LBracketClose
 
 braceP :: Parser a -> Parser a
 braceP p = singleP LBraceOpen *> p <* singleP LBraceClose
+
+afterP :: PEParser a -> PEParser b -> PEParser a
+afterP before after =
+  Parser $ \input ->
+    let parsers = map splitParser [length input, length input - 1 .. 0]
+        p = foldl (<|>) failingP parsers
+     in runParser p input
+  where
+    splitParser n =
+      Parser $ \input ->
+        let (begin, end) = splitAt n input
+        in
+          case runParser before $ begin <> [ScanElement (0, 0) LEndMarker] of
+            Right ([ScanElement _ LEndMarker], e) ->
+              case runParser after end of
+                Right _ -> Right (end, e)
+                _ -> Left $ ParseError (0, 0) "Error"
+            _ -> Left $ ParseError (0, 0) "Error"
 
 ---------------
 -- C PARSERS --
@@ -216,10 +236,11 @@ cFunctionSpecifiersP =
 cDeclarationP :: PEParser CDeclaration
 cDeclarationP =
   parserToPEParser $
-  CDeclaration <$>
-  cDeclarationSpecifiersP <*>
-  cInitDeclaratorListOptionalP <*
-  singleP LSemiColon
+  liftA2
+    CDeclaration
+    (afterP cDeclarationSpecifiersP after)
+    after
+  where after = cInitDeclaratorListOptionalP <* singleP LSemiColon
 
 cDeclarationListP :: PEParser CDeclarationList
 cDeclarationListP =
@@ -365,8 +386,9 @@ cStructDeclarationP =
   parserToPEParser $
   liftA2
     CStructDeclaration
-    cSpecifierQualifierListP
-    cStructDeclaratorListP <* singleP LSemiColon
+    (afterP cSpecifierQualifierListP after)
+    after
+  where after = cStructDeclaratorListP <* singleP LSemiColon
 
 cSpecifierQualifierListP :: PEParser CSpecifierQualifierList
 cSpecifierQualifierListP =
@@ -693,9 +715,9 @@ cLabeledStatementP =
 cExpressionStatementP :: PEParser CExpressionStatement
 cExpressionStatementP =
   parserToPEParser $
-  CExpressionStatement <$>
-  cExpressionOptionalP <*
-  singleP LSemiColon
+  liftA
+    CExpressionStatement
+    (cExpressionOptionalP <* singleP LSemiColon)
 
 cCompoundStatementP :: PEParser CCompoundStatement
 cCompoundStatementP =
@@ -1151,7 +1173,9 @@ cArgumentExpressionListP' =
   liftA2
     CArgumentExpressionList'
     (singleP LComma *> cAssignmentExpressionP)
-    cArgumentExpressionListP'
+    cArgumentExpressionListP' <|>
+  pure
+    CArgumentExpressionList'Empty
 
 cConstantP :: PEParser CConstant
 cConstantP =

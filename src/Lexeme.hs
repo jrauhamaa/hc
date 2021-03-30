@@ -1,6 +1,5 @@
 module Lexeme where
 
--- as described in https://port70.net/~nsz/c/c89/c89-draft.html
 data CLexeme
   -- keywords
   = LAuto
