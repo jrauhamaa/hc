@@ -1,47 +1,74 @@
-module ParseElements where
+module ParseItem where
 
-import Scanner (Coordinates)
+import Lexeme (CLexeme)
+import Scanner (Coordinates, ScanItem(..))
 
-data ParseElement a =
-  ParseElement
+data ParseItem a =
+  ParseItem
     { parseLoc :: Coordinates
-    , parseElem :: a
+    , scanItems :: [ScanItem CLexeme]
+    , parseItem :: a
     }
-  deriving (Show, Eq)
+  deriving (Eq)
 
-instance Functor ParseElement where
-  fmap fab pea = ParseElement (parseLoc pea) (fab $ parseElem pea)
+instance Show a => Show (ParseItem a) where
+  show (ParseItem l items item) =
+    mconcat
+      [ "{ "
+      , show l
+      , " "
+      , show $ mconcat $ map scanStr items
+      , " "
+      , show item
+      ]
 
-instance Applicative ParseElement where
-  pure a = ParseElement (1, 1) a
-  peab <*> pea = ParseElement (parseLoc pea) (parseElem peab $ parseElem pea)
+instance Functor ParseItem where
+  fmap fab pia =
+    ParseItem
+      { parseLoc = parseLoc pia
+      , scanItems = scanItems pia
+      , parseItem = fab $ parseItem pia
+      }
 
-type PE = ParseElement
+instance Applicative ParseItem where
+  pure a = ParseItem (1, 1) [] a
+  piab <*> pia =
+    ParseItem
+      { parseLoc = parseLoc pia
+      , scanItems = scanItems piab <> scanItems piab
+      , parseItem = parseItem piab $ parseItem pia
+      }
+
+type PI = ParseItem
 
 newtype CIdentifier =
-  CIdentifier (PE String)
+  CIdentifier (PI String)
   deriving (Show, Eq)
+
+----------------
+-- PARSEITEMS --
+----------------
 
 data CIdentifierOptional
   = CIdentifierOptionalEmpty
-  | CIdentifierOptional (PE CIdentifier)
+  | CIdentifierOptional (PI CIdentifier)
   deriving (Show, Eq)
 
 -- CExternalDeclaration CTranslationUnitOptional
 data CTranslationUnit =
-  CTranslationUnit (PE CExternalDeclaration) (PE CTranslationUnitOptional)
+  CTranslationUnit (PI CExternalDeclaration) (PI CTranslationUnitOptional)
   deriving (Show, Eq)
 
 data CTranslationUnitOptional
   = CTranslationUnitOptionalEmpty
-  | CTranslationUnitOptional (PE CTranslationUnit)
+  | CTranslationUnitOptional (PI CTranslationUnit)
   deriving (Show, Eq)
 
 data CExternalDeclaration
   -- CFunctionDefinition
-  = CExternalDeclarationFunction (PE CFunctionDefinition)
+  = CExternalDeclarationFunction (PI CFunctionDefinition)
   -- CDeclaration
-  | CExternalDeclaration (PE CDeclaration)
+  | CExternalDeclaration (PI CDeclaration)
   deriving (Show, Eq)
 
 -- CDeclarationSpecifiersOptional
@@ -50,45 +77,45 @@ data CExternalDeclaration
 --   CCompoundStatement
 data CFunctionDefinition =
   CFunctionDefinition
-    (PE CDeclarationSpecifiersOptional)
-    (PE CDeclarator)
-    (PE CDeclarationListOptional)
-    (PE CCompoundStatement)
+    (PI CDeclarationSpecifiersOptional)
+    (PI CDeclarator)
+    (PI CDeclarationListOptional)
+    (PI CCompoundStatement)
   deriving (Show, Eq)
 
 -- CDeclarationSpecifiers CInitDeclaratorListOptional ;
 data CDeclaration =
-  CDeclaration (PE CDeclarationSpecifiers) (PE CInitDeclaratorListOptional)
+  CDeclaration (PI CDeclarationSpecifiers) (PI CInitDeclaratorListOptional)
   deriving (Show, Eq)
 
 -- CDeclaration CDeclarationListOptional
 data CDeclarationList =
-  CDeclarationList (PE CDeclaration) (PE CDeclarationListOptional)
+  CDeclarationList (PI CDeclaration) (PI CDeclarationListOptional)
   deriving (Show, Eq)
 
 data CDeclarationListOptional
   = CDeclarationListOptionalEmpty
-  | CDeclarationListOptional (PE CDeclarationList)
+  | CDeclarationListOptional (PI CDeclarationList)
   deriving (Show, Eq)
 
 data CDeclarationSpecifiers
   -- CStorageClassSpecifier CDeclarationSpecifiersOptional
   = CDeclarationSpecifiersStorageClass
-      (PE CStorageClassSpecifier)
-      (PE CDeclarationSpecifiersOptional)
+      (PI CStorageClassSpecifier)
+      (PI CDeclarationSpecifiersOptional)
   -- CTypeSpecifier CDeclarationSpecifiersOptional
   | CDeclarationSpecifiersTypeSpecifier
-      (PE CTypeSpecifier)
-      (PE CDeclarationSpecifiersOptional)
+      (PI CTypeSpecifier)
+      (PI CDeclarationSpecifiersOptional)
   -- CTypeQualifier CDeclarationSpecifiersOptional
   | CDeclarationSpecifiersTypeQualifier
-      (PE CTypeQualifier)
-      (PE CDeclarationSpecifiersOptional)
+      (PI CTypeQualifier)
+      (PI CDeclarationSpecifiersOptional)
   deriving (Show, Eq)
 
 data CDeclarationSpecifiersOptional
   = CDeclarationSpecifiersOptionalEmpty
-  | CDeclarationSpecifiersOptional (PE CDeclarationSpecifiers)
+  | CDeclarationSpecifiersOptional (PI CDeclarationSpecifiers)
   deriving (Show, Eq)
 
 data CStorageClassSpecifier
@@ -110,11 +137,11 @@ data CTypeSpecifier
   | CTypeSpecifierSigned    -- signed
   | CTypeSpecifierUnsigned  -- unsigned
   -- CStructOrUnionSpecifier
-  | CTypeSpecifierStructOrUnion (PE CStructOrUnionSpecifier)
+  | CTypeSpecifierStructOrUnion (PI CStructOrUnionSpecifier)
   -- CEnumSpecifier
-  | CTypeSpecifierEnum (PE CEnumSpecifier)
+  | CTypeSpecifierEnum (PI CEnumSpecifier)
   -- CTypedefName
-  | CTypeSpecifierTypedef (PE CTypedefName)
+  | CTypeSpecifierTypedef (PI CTypedefName)
   deriving (Show, Eq)
 
 data CTypeQualifier
@@ -125,11 +152,11 @@ data CTypeQualifier
 data CStructOrUnionSpecifier
   -- CStructOrUnion CIdentifierOptional { CStructDeclarationList }
   = CStructOrUnionSpecifierList
-      (PE CStructOrUnion)
-      (PE CIdentifierOptional)
-      (PE CStructDeclarationList)
+      (PI CStructOrUnion)
+      (PI CIdentifierOptional)
+      (PI CStructDeclarationList)
   -- CStructOrUnion CIdentifier
-  | CStructOrUnionSpecifier (PE CStructOrUnion) (PE CIdentifier)
+  | CStructOrUnionSpecifier (PI CStructOrUnion) (PI CIdentifier)
   deriving (Show, Eq)
 
 data CStructOrUnion
@@ -140,125 +167,125 @@ data CStructOrUnion
 -- CStructDeclaration CStructDeclarationListOptional
 data CStructDeclarationList =
   CStructDeclarationList
-    (PE CStructDeclaration)
-    (PE CStructDeclarationListOptional)
+    (PI CStructDeclaration)
+    (PI CStructDeclarationListOptional)
   deriving (Show, Eq)
 
 data CStructDeclarationListOptional
   = CStructDeclarationListOptionalEmpty
-  | CStructDeclarationListOptional (PE CStructDeclarationList)
+  | CStructDeclarationListOptional (PI CStructDeclarationList)
   deriving (Show, Eq)
 
 -- CInitDeclarator CInitDeclaratorList'
 data CInitDeclaratorList =
-  CInitDeclaratorList (PE CInitDeclarator) (PE CInitDeclaratorList')
+  CInitDeclaratorList (PI CInitDeclarator) (PI CInitDeclaratorList')
   deriving (Show, Eq)
 
 data CInitDeclaratorListOptional
   = CInitDeclaratorListOptionalEmpty
-  | CInitDeclaratorListOptional (PE CInitDeclaratorList)
+  | CInitDeclaratorListOptional (PI CInitDeclaratorList)
   deriving (Show, Eq)
 
 data CInitDeclaratorList'
   -- empty
   = CInitDeclaratorList'Empty
   -- , CInitDeclarator CInitDeclaratorList'
-  | CInitDeclaratorList' (PE CInitDeclarator) (PE CInitDeclaratorList')
+  | CInitDeclaratorList' (PI CInitDeclarator) (PI CInitDeclaratorList')
   deriving (Show, Eq)
 
 -- CDeclarator CAssignInitializerOptional
 data CInitDeclarator =
-  CInitDeclarator (PE CDeclarator) (PE CAssignInitializerOptional)
+  CInitDeclarator (PI CDeclarator) (PI CAssignInitializerOptional)
   deriving (Show, Eq)
 
 data CAssignInitializerOptional
   -- empty
   = CAssignInitializerOptionalEmpty
   -- = CInitializer
-  | CAssignInitializerOptional (PE CInitializer)
+  | CAssignInitializerOptional (PI CInitializer)
   deriving (Show, Eq)
 
 -- CSpecifierQualifierList CStructDeclaratorList ;
 data CStructDeclaration =
-  CStructDeclaration (PE CSpecifierQualifierList) (PE CStructDeclaratorList)
+  CStructDeclaration (PI CSpecifierQualifierList) (PI CStructDeclaratorList)
   deriving (Show, Eq)
 
 data CSpecifierQualifierList
   -- CTypeSpecifier CSpecifierQualifierListOptional
   = CSpecifierQualifierListSpecifier
-      (PE CTypeSpecifier)
-      (PE CSpecifierQualifierListOptional)
+      (PI CTypeSpecifier)
+      (PI CSpecifierQualifierListOptional)
   -- CTypeQualifier CSpecifierQualifierListOptional
   | CSpecifierQualifierListQualifier
-      (PE CTypeQualifier)
-      (PE CSpecifierQualifierListOptional)
+      (PI CTypeQualifier)
+      (PI CSpecifierQualifierListOptional)
   deriving (Show, Eq)
 
 data CSpecifierQualifierListOptional
   = CSpecifierQualifierListOptionalEmpty
-  | CSpecifierQualifierListOptional (PE CSpecifierQualifierList)
+  | CSpecifierQualifierListOptional (PI CSpecifierQualifierList)
   deriving (Show, Eq)
 
 -- CStructDeclarator CStructDeclaratorList'
 data CStructDeclaratorList =
-  CStructDeclaratorList (PE CStructDeclarator) (PE CStructDeclaratorList')
+  CStructDeclaratorList (PI CStructDeclarator) (PI CStructDeclaratorList')
   deriving (Show, Eq)
 
 data CStructDeclaratorList'
   -- empty
   = CStructDeclaratorList'Empty
   -- , CStructDeclarator CStructDeclaratorList'
-  | CStructDeclaratorList' (PE CStructDeclarator) (PE CStructDeclaratorList')
+  | CStructDeclaratorList' (PI CStructDeclarator) (PI CStructDeclaratorList')
   deriving (Show, Eq)
 
 data CStructDeclarator
   -- CDeclarator
-  = CStructDeclarator (PE CDeclarator)
+  = CStructDeclarator (PI CDeclarator)
   -- CDeclaratorOptional : CConstantExpression
-  | CStructDeclaratorField (PE CDeclaratorOptional) (PE CConstantExpression)
+  | CStructDeclaratorField (PI CDeclaratorOptional) (PI CConstantExpression)
   deriving (Show, Eq)
 
 data CEnumSpecifier
   -- enum CIdentifierOptional { CEnumeratorList }
-  = CEnumSpecifierList (PE CIdentifierOptional) (PE CEnumeratorList)
+  = CEnumSpecifierList (PI CIdentifierOptional) (PI CEnumeratorList)
   -- enum CIdentifier
-  | CEnumSpecifier (PE CIdentifier)
+  | CEnumSpecifier (PI CIdentifier)
   deriving (Show, Eq)
 
 -- CEnumerator CEnumeratorList'
 data CEnumeratorList =
-  CEnumeratorList (PE CEnumerator) (PE CEnumeratorList')
+  CEnumeratorList (PI CEnumerator) (PI CEnumeratorList')
   deriving (Show, Eq)
 
 data CEnumeratorList'
   -- empty
   = CEnumeratorList'Empty
   -- , CEnumerator CEnumeratorList'
-  | CEnumeratorList' (PE CEnumerator) (PE CEnumeratorList')
+  | CEnumeratorList' (PI CEnumerator) (PI CEnumeratorList')
   deriving (Show, Eq)
 
 data CEnumerator
   -- CIdentifier
-  = CEnumerator (PE CIdentifier)
+  = CEnumerator (PI CIdentifier)
   -- CIdentifier = CConstantExpression
-  | CEnumeratorAssign (PE CIdentifier) (PE CConstantExpression)
+  | CEnumeratorAssign (PI CIdentifier) (PI CConstantExpression)
   deriving (Show, Eq)
 
 -- CPointerOptional CDirectDeclarator
 data CDeclarator =
-  CDeclarator (PE CPointerOptional) (PE CDirectDeclarator)
+  CDeclarator (PI CPointerOptional) (PI CDirectDeclarator)
   deriving (Show, Eq)
 
 data CDeclaratorOptional
   = CDeclaratorOptionalEmpty
-  | CDeclaratorOptional (PE CDeclarator)
+  | CDeclaratorOptional (PI CDeclarator)
   deriving (Show, Eq)
 
 data CDirectDeclarator
   -- CIdentifier CDirectDeclarator'
-  = CDirectDeclaratorId (PE CIdentifier) (PE CDirectDeclarator')
+  = CDirectDeclaratorId (PI CIdentifier) (PI CDirectDeclarator')
   -- ( CDeclarator ) CDirectDeclarator'
-  | CDirectDeclaratorParen (PE CDeclarator) (PE CDirectDeclarator')
+  | CDirectDeclaratorParen (PI CDeclarator) (PI CDirectDeclarator')
   deriving (Show, Eq)
 
 data CDirectDeclarator'
@@ -266,46 +293,46 @@ data CDirectDeclarator'
   = CDirectDeclarator'Empty
   -- [ CConstantExpressionOptional ] CDirectDeclarator'
   | CDirectDeclarator'ConstExpr
-      (PE CConstantExpressionOptional)
-      (PE CDirectDeclarator')
+      (PI CConstantExpressionOptional)
+      (PI CDirectDeclarator')
   -- ( CParameterTypeList ) CDirectDeclarator'
   | CDirectDeclarator'ParamTypeList
-      (PE CParameterTypeList)
-      (PE CDirectDeclarator')
+      (PI CParameterTypeList)
+      (PI CDirectDeclarator')
   -- ( CIdentifierListOptional ) CDirectDeclarator'
   | CDirectDeclarator'IdList
-      (PE CIdentifierListOptional)
-      (PE CDirectDeclarator')
+      (PI CIdentifierListOptional)
+      (PI CDirectDeclarator')
   deriving (Show, Eq)
 
 -- * CTypeQualifierListOptional CPointerOptional
 data CPointer =
-  CPointer (PE CTypeQualifierListOptional) (PE CPointerOptional)
+  CPointer (PI CTypeQualifierListOptional) (PI CPointerOptional)
   deriving (Show, Eq)
 
 data CPointerOptional
   = CPointerOptionalEmpty
-  | CPointerOptional (PE CPointer)
+  | CPointerOptional (PI CPointer)
   deriving (Show, Eq)
 
 -- CTypeQualifier CTypeQualifierListOptional
 data CTypeQualifierList =
-  CTypeQualifierList (PE CTypeQualifier) (PE CTypeQualifierListOptional)
+  CTypeQualifierList (PI CTypeQualifier) (PI CTypeQualifierListOptional)
   deriving (Show, Eq)
 
 data CTypeQualifierListOptional
   = CTypeQualifierListOptionalEmpty
-  | CTypeQualifierListOptional (PE CTypeQualifierList)
+  | CTypeQualifierListOptional (PI CTypeQualifierList)
   deriving (Show, Eq)
 
 -- CParameterList CVarArgsOptional
 data CParameterTypeList
-  = CParameterTypeList (PE CParameterList) (PE CVarArgsOptional)
+  = CParameterTypeList (PI CParameterList) (PI CVarArgsOptional)
   deriving (Show, Eq)
 
 data CParameterTypeListOptional
   = CParameterTypeListOptionalEmpty
-  | CParameterTypeListOptional (PE CParameterTypeList)
+  | CParameterTypeListOptional (PI CParameterTypeList)
   deriving (Show, Eq)
 
 data CVarArgsOptional
@@ -317,221 +344,221 @@ data CVarArgsOptional
 
 -- CParameterDeclaration CParameterList'
 data CParameterList =
-  CParameterList (PE CParameterDeclaration) (PE CParameterList')
+  CParameterList (PI CParameterDeclaration) (PI CParameterList')
   deriving (Show, Eq)
 
 data CParameterList'
   -- empty
   = CParameterList'Empty
   -- , CParameterDeclaration CParameterList'
-  | CParameterList' (PE CParameterDeclaration) (PE CParameterList')
+  | CParameterList' (PI CParameterDeclaration) (PI CParameterList')
   deriving (Show, Eq)
 
 -- CDeclarationSpecifiers CParameterDeclaration'
 data CParameterDeclaration
   = CParameterDeclaration
-      (PE CDeclarationSpecifiers)
-      (PE CParameterDeclaration')
+      (PI CDeclarationSpecifiers)
+      (PI CParameterDeclaration')
   deriving (Show, Eq)
 
 data CParameterDeclaration'
   -- CDeclarator
-  = CParameterDeclaration' (PE CDeclarator)
+  = CParameterDeclaration' (PI CDeclarator)
   -- CAbstractDeclaratorOptional
-  | CParameterDeclaration'Abstract (PE CAbstractDeclaratorOptional)
+  | CParameterDeclaration'Abstract (PI CAbstractDeclaratorOptional)
   deriving (Show, Eq)
 
 -- CIdentifier CIdentifierList'
 data CIdentifierList =
-  CIdentifierList (PE CIdentifier) (PE CIdentifierList')
+  CIdentifierList (PI CIdentifier) (PI CIdentifierList')
   deriving (Show, Eq)
 
 data CIdentifierListOptional
   = CIdentifierListOptionalEmpty
-  | CIdentifierListOptional (PE CIdentifierList)
+  | CIdentifierListOptional (PI CIdentifierList)
   deriving (Show, Eq)
 
 data CIdentifierList'
   -- empty
   = CIdentifierList'Empty
   -- , CIdentifier CIdentifierList'
-  | CIdentifierList' (PE CIdentifier) (PE CIdentifierList')
+  | CIdentifierList' (PI CIdentifier) (PI CIdentifierList')
   deriving (Show, Eq)
 
 data CInitializer
   -- CAssignmentExpression
-  = CInitializerAssignment (PE CAssignmentExpression)
+  = CInitializerAssignment (PI CAssignmentExpression)
   -- { CInitializerList }
   -- { CInitializerList , }
-  | CInitializerInitList (PE CInitializerList)
+  | CInitializerInitList (PI CInitializerList)
   deriving (Show, Eq)
 
 -- CInitializer CInitializerList'
 data CInitializerList =
-  CInitializerList (PE CInitializer) (PE CInitializerList')
+  CInitializerList (PI CInitializer) (PI CInitializerList')
   deriving (Show, Eq)
 
 data CInitializerList'
   -- empty
   = CInitializerList'Empty
   -- , CInitializer CInitializerList'
-  | CInitializerList' (PE CInitializer) (PE CInitializerList')
+  | CInitializerList' (PI CInitializer) (PI CInitializerList')
   deriving (Show, Eq)
 
 -- CSpecifierQualifierList CAbstractDeclaratorOptional
 data CTypeName =
-  CTypeName (PE CSpecifierQualifierList) (PE CAbstractDeclaratorOptional)
+  CTypeName (PI CSpecifierQualifierList) (PI CAbstractDeclaratorOptional)
   deriving (Show, Eq)
 
 data CAbstractDeclarator
   -- CPointer
-  = CAbstractDeclaratorPointer (PE CPointer)
+  = CAbstractDeclaratorPointer (PI CPointer)
   -- CPointerOptional CDirectAbstractDeclarator
   | CAbstractDeclaratorDirect
-      (PE CPointerOptional)
-      (PE CDirectAbstractDeclarator)
+      (PI CPointerOptional)
+      (PI CDirectAbstractDeclarator)
   deriving (Show, Eq)
 
 data CAbstractDeclaratorOptional
   = CAbstractDeclaratorOptionalEmpty
-  | CAbstractDeclaratorOptional (PE CAbstractDeclarator)
+  | CAbstractDeclaratorOptional (PI CAbstractDeclarator)
   deriving (Show, Eq)
 
 -- ( CAbstractDeclarator ) CDirectAbstractDeclarator'
 data CDirectAbstractDeclarator
   = CDirectAbstractDeclarator
-      (PE CAbstractDeclarator)
-      (PE CDirectAbstractDeclarator')
+      (PI CAbstractDeclarator)
+      (PI CDirectAbstractDeclarator')
   deriving (Show, Eq)
 
 data CDirectAbstractDeclarator'
   -- [ CConstantExpressionOptional ] CDirectAbstractDeclarator'
   = CDirectAbstractDeclarator'Const
-      (PE CConstantExpressionOptional)
-      (PE CDirectAbstractDeclarator')
+      (PI CConstantExpressionOptional)
+      (PI CDirectAbstractDeclarator')
   -- ( CParameterTypeListOptional ) CDirectAbstractDeclarator'
   | CDirectAbstractDeclarator'Params
-      (PE CParameterTypeListOptional)
-      (PE CDirectAbstractDeclarator')
+      (PI CParameterTypeListOptional)
+      (PI CDirectAbstractDeclarator')
   -- empty
   | CDirectAbstractDeclarator'Empty
   deriving (Show, Eq)
 
 -- CIdentifier
 newtype CTypedefName =
-  CTypedefName (PE CIdentifier)
+  CTypedefName (PI CIdentifier)
   deriving (Show, Eq)
 
 data CStatement
   -- CLabeledStatement
-  = CStatementLabeled (PE CLabeledStatement)
+  = CStatementLabeled (PI CLabeledStatement)
   -- CExpressionStatement
-  | CStatementExpression (PE CExpressionStatement)
+  | CStatementExpression (PI CExpressionStatement)
   -- CCompoundStatement
-  | CStatementCompound (PE CCompoundStatement)
+  | CStatementCompound (PI CCompoundStatement)
   -- CSelectionStatement
-  | CStatementSelection (PE CSelectionStatement)
+  | CStatementSelection (PI CSelectionStatement)
   -- CIterationStatement
-  | CStatementIteration (PE CIterationStatement)
+  | CStatementIteration (PI CIterationStatement)
   -- CJumpStatement
-  | CStatementJump (PE CJumpStatement)
+  | CStatementJump (PI CJumpStatement)
   deriving (Show, Eq)
 
 data CLabeledStatement
   -- CIdentifier : CStatement
-  = CLabeledStatementId (PE CIdentifier) (PE CStatement)
+  = CLabeledStatementId (PI CIdentifier) (PI CStatement)
   -- case CConstantExpression : CStatement
-  | CLabeledStatementCase (PE CConstantExpression) (PE CStatement)
+  | CLabeledStatementCase (PI CConstantExpression) (PI CStatement)
   -- default : CStatement
-  | CLabeledStatementDefault (PE CStatement)
+  | CLabeledStatementDefault (PI CStatement)
   deriving (Show, Eq)
 
 -- CExpressionOptional ;
 newtype CExpressionStatement =
-  CExpressionStatement (PE CExpressionOptional)
+  CExpressionStatement (PI CExpressionOptional)
   deriving (Show, Eq)
 
 -- { CDeclarationListOptional CStatementListOptional }
 data CCompoundStatement =
-  CCompoundStatement (PE CDeclarationListOptional) (PE CStatementListOptional)
+  CCompoundStatement (PI CDeclarationListOptional) (PI CStatementListOptional)
   deriving (Show, Eq)
 
 -- CStatement CStatementListOptional
 data CStatementList =
-  CStatementList (PE CStatement) (PE CStatementListOptional)
+  CStatementList (PI CStatement) (PI CStatementListOptional)
   deriving (Show, Eq)
 
 data CStatementListOptional
   = CStatementListOptionalEmpty
-  | CStatementListOptional (PE CStatementList)
+  | CStatementListOptional (PI CStatementList)
   deriving (Show, Eq)
 
 data CSelectionStatement
   -- if ( CExpression ) CStatement CElseOptional
-  = CSelectionStatementIf (PE CExpression) (PE CStatement) (PE CElseOptional)
+  = CSelectionStatementIf (PI CExpression) (PI CStatement) (PI CElseOptional)
   -- switch ( CExpression ) CStatement
-  | CSelectionStatementSwitch (PE CExpression) (PE CStatement)
+  | CSelectionStatementSwitch (PI CExpression) (PI CStatement)
   deriving (Show, Eq)
 
 data CElseOptional
   -- empty
   = CElseOptionalEmpty
   -- else CStatement
-  | CElseOptional (PE CStatement)
+  | CElseOptional (PI CStatement)
   deriving (Show, Eq)
 
 data CIterationStatement
   -- while ( CExpression ) CStatement
-  = CIterationStatementWhile (PE CExpression) (PE CStatement)
+  = CIterationStatementWhile (PI CExpression) (PI CStatement)
   -- do CStatement while ( CExpression ) ;
-  | CIterationStatementDoWhile (PE CStatement) (PE CExpression)
+  | CIterationStatementDoWhile (PI CStatement) (PI CExpression)
   -- for ( CExpressionOptional
   --     ; CExpressionOptional
   --     ; CExpressionOptional
   --     ) CStatement
   | CIterationStatementFor
-      (PE CExpressionOptional)
-      (PE CExpressionOptional)
-      (PE CExpressionOptional)
-      (PE CStatement)
+      (PI CExpressionOptional)
+      (PI CExpressionOptional)
+      (PI CExpressionOptional)
+      (PI CStatement)
   deriving (Show, Eq)
 
 data CJumpStatement
   -- goto CIdentifier ;
-  = CJumpStatementGoto (PE CIdentifier)
+  = CJumpStatementGoto (PI CIdentifier)
   -- continue ;
   | CJumpStatementContinue
   -- break ;
   | CJumpStatementBreak
   -- return CExpressionOptional ;
-  | CJumpStatementReturn (PE CExpressionOptional)
+  | CJumpStatementReturn (PI CExpressionOptional)
   deriving (Show, Eq)
 
 -- CAssignmentExpression CExpression'
 data CExpression =
-  CExpression (PE CAssignmentExpression) (PE CExpression')
+  CExpression (PI CAssignmentExpression) (PI CExpression')
   deriving (Show, Eq)
 
 data CExpressionOptional
   = CExpressionOptionalEmpty
-  | CExpressionOptional (PE CExpression)
+  | CExpressionOptional (PI CExpression)
   deriving (Show, Eq)
 
 data CExpression'
   -- empty
   = CExpression'Empty
   -- , CAssignmentExpression CExpression'
-  | CExpression' (PE CAssignmentExpression) (PE CExpression')
+  | CExpression' (PI CAssignmentExpression) (PI CExpression')
   deriving (Show, Eq)
 
 data CAssignmentExpression
   -- CConditionalExpression
-  = CAssignmentExpressionConditional (PE CConditionalExpression)
+  = CAssignmentExpressionConditional (PI CConditionalExpression)
   -- CUnaryExpression CAssignmentOperator CAssignmentExpression
   | CAssignmentExpression
-      (PE CUnaryExpression)
-      (PE CAssignmentOperator)
-      (PE CAssignmentExpression)
+      (PI CUnaryExpression)
+      (PI CAssignmentOperator)
+      (PI CAssignmentExpression)
   deriving (Show, Eq)
 
 data CAssignmentOperator
@@ -550,41 +577,41 @@ data CAssignmentOperator
 
 -- CLogicalOrExpression CTernaryOptional
 data CConditionalExpression =
-  CConditionalExpression (PE CLogicalOrExpression) (PE CTernaryOptional)
+  CConditionalExpression (PI CLogicalOrExpression) (PI CTernaryOptional)
   deriving (Show, Eq)
 
 data CTernaryOptional
   -- empty
   = CTernaryOptionalEmpty
   -- ? CExpression : CConditionalExpression
-  | CTernaryOptional (PE CExpression) (PE CConditionalExpression)
+  | CTernaryOptional (PI CExpression) (PI CConditionalExpression)
   deriving (Show, Eq)
 
 -- CConditionalExpression
 newtype CConstantExpression =
-  CConstantExpression (PE CConditionalExpression)
+  CConstantExpression (PI CConditionalExpression)
   deriving (Show, Eq)
 
 data CConstantExpressionOptional
   = CConstantExpressionOptionalEmpty
-  | CConstantExpressionOptional (PE CConstantExpression)
+  | CConstantExpressionOptional (PI CConstantExpression)
   deriving (Show, Eq)
 
 -- CLogicalAndExpression CLogicalOrExpression'
 data CLogicalOrExpression =
-  CLogicalOrExpression (PE CLogicalAndExpression) (PE CLogicalOrExpression')
+  CLogicalOrExpression (PI CLogicalAndExpression) (PI CLogicalOrExpression')
   deriving (Show, Eq)
 
 data CLogicalOrExpression'
   -- empty
   = CLogicalOrExpression'Empty
   -- || CLogicalAndExpression CLogicalOrExpression'
-  | CLogicalOrExpression' (PE CLogicalAndExpression) (PE CLogicalOrExpression')
+  | CLogicalOrExpression' (PI CLogicalAndExpression) (PI CLogicalOrExpression')
   deriving (Show, Eq)
 
 -- CInclusiveOrExpression CLogicalAndExpression'
 data CLogicalAndExpression =
-  CLogicalAndExpression (PE CInclusiveOrExpression) (PE CLogicalAndExpression')
+  CLogicalAndExpression (PI CInclusiveOrExpression) (PI CLogicalAndExpression')
   deriving (Show, Eq)
 
 data CLogicalAndExpression'
@@ -592,15 +619,15 @@ data CLogicalAndExpression'
   = CLogicalAndExpression'Empty
   -- && CInclusiveOrExpression CLogicalAndExpression'
   | CLogicalAndExpression'
-      (PE CInclusiveOrExpression)
-      (PE CLogicalAndExpression')
+      (PI CInclusiveOrExpression)
+      (PI CLogicalAndExpression')
   deriving (Show, Eq)
 
 -- CExclusiveOrExpression CInclusiveOrExpression'
 data CInclusiveOrExpression =
   CInclusiveOrExpression
-    (PE CExclusiveOrExpression)
-    (PE CInclusiveOrExpression')
+    (PI CExclusiveOrExpression)
+    (PI CInclusiveOrExpression')
   deriving (Show, Eq)
 
 data CInclusiveOrExpression'
@@ -608,85 +635,85 @@ data CInclusiveOrExpression'
   = CInclusiveOrExpression'Empty
   -- | CExclusiveOrExpression CInclusiveOrExpression'
   | CInclusiveOrExpression'
-    (PE CExclusiveOrExpression)
-    (PE CInclusiveOrExpression')
+    (PI CExclusiveOrExpression)
+    (PI CInclusiveOrExpression')
   deriving (Show, Eq)
 
 -- CAndExpression CExclusiveOrExpression'
 data CExclusiveOrExpression =
-  CExclusiveOrExpression (PE CAndExpression) (PE CExclusiveOrExpression')
+  CExclusiveOrExpression (PI CAndExpression) (PI CExclusiveOrExpression')
   deriving (Show, Eq)
 
 data CExclusiveOrExpression'
   -- empty
   = CExclusiveOrExpression'Empty
   -- ^ CAndExpression CExclusiveOrExpression'
-  | CExclusiveOrExpression' (PE CAndExpression) (PE CExclusiveOrExpression')
+  | CExclusiveOrExpression' (PI CAndExpression) (PI CExclusiveOrExpression')
   deriving (Show, Eq)
 
 -- CEqualityExpression CAndExpression'
 data CAndExpression =
-  CAndExpression (PE CEqualityExpression) (PE CAndExpression')
+  CAndExpression (PI CEqualityExpression) (PI CAndExpression')
   deriving (Show, Eq)
 
 data CAndExpression'
   -- empty
   = CAndExpression'Empty
   -- & CEqualityExpression CAndExpression'
-  | CAndExpression' (PE CEqualityExpression) (PE CAndExpression')
+  | CAndExpression' (PI CEqualityExpression) (PI CAndExpression')
   deriving (Show, Eq)
 
 -- CRelationalExpression CEqualityExpression'
 data CEqualityExpression =
-  CEqualityExpression (PE CRelationalExpression) (PE CEqualityExpression')
+  CEqualityExpression (PI CRelationalExpression) (PI CEqualityExpression')
   deriving (Show, Eq)
 
 data CEqualityExpression'
   -- empty
   = CEqualityExpression'Empty
   -- == CRelationalExpression CEqualityExpression'
-  | CEqualityExpression'EQ (PE CRelationalExpression) (PE CEqualityExpression')
+  | CEqualityExpression'EQ (PI CRelationalExpression) (PI CEqualityExpression')
   -- != CRelationalExpression CEqualityExpression'
   | CEqualityExpression'NEQ
-      (PE CRelationalExpression)
-      (PE CEqualityExpression')
+      (PI CRelationalExpression)
+      (PI CEqualityExpression')
   deriving (Show, Eq)
 
 -- CShiftExpression CRelationalExpression'
 data CRelationalExpression =
-  CRelationalExpression (PE CShiftExpression) (PE CRelationalExpression')
+  CRelationalExpression (PI CShiftExpression) (PI CRelationalExpression')
   deriving (Show, Eq)
 
 data CRelationalExpression'
   -- empty
   = CRelationalExpression'Empty
   -- < CShiftExpression CRelationalExpression'
-  | CRelationalExpression'LT (PE CShiftExpression) (PE CRelationalExpression')
+  | CRelationalExpression'LT (PI CShiftExpression) (PI CRelationalExpression')
   -- <= CShiftExpression CRelationalExpression'
-  | CRelationalExpression'LTE (PE CShiftExpression) (PE CRelationalExpression')
+  | CRelationalExpression'LTE (PI CShiftExpression) (PI CRelationalExpression')
   -- > CShiftExpression CRelationalExpression'
-  | CRelationalExpression'GT (PE CShiftExpression) (PE CRelationalExpression')
+  | CRelationalExpression'GT (PI CShiftExpression) (PI CRelationalExpression')
   -- >= CShiftExpression CRelationalExpression'
-  | CRelationalExpression'GTE (PE CShiftExpression) (PE CRelationalExpression')
+  | CRelationalExpression'GTE (PI CShiftExpression) (PI CRelationalExpression')
   deriving (Show, Eq)
 
 -- CAdditiveExpression CShiftExpression'
 data CShiftExpression =
-  CShiftExpression (PE CAdditiveExpression) (PE CShiftExpression')
+  CShiftExpression (PI CAdditiveExpression) (PI CShiftExpression')
   deriving (Show, Eq)
 
 data CShiftExpression'
   -- empty
   = CShiftExpression'Empty
   -- << CAdditiveExpression CShiftExpression'
-  | CShiftExpression'Left (PE CAdditiveExpression) (PE CShiftExpression')
+  | CShiftExpression'Left (PI CAdditiveExpression) (PI CShiftExpression')
   -- >> CAdditiveExpression CShiftExpression'
-  | CShiftExpression'Right (PE CAdditiveExpression) (PE CShiftExpression')
+  | CShiftExpression'Right (PI CAdditiveExpression) (PI CShiftExpression')
   deriving (Show, Eq)
 
 -- CMultiplicativeExpression CAdditiveExpression'
 data CAdditiveExpression =
-  CAdditiveExpression (PE CMultiplicativeExpression) (PE CAdditiveExpression')
+  CAdditiveExpression (PI CMultiplicativeExpression) (PI CAdditiveExpression')
   deriving (Show, Eq)
 
 data CAdditiveExpression'
@@ -694,19 +721,19 @@ data CAdditiveExpression'
   = CAdditiveExpression'Empty
   -- + CMultiplicativeExpression CAdditiveExpression'
   | CAdditiveExpression'Add
-      (PE CMultiplicativeExpression)
-      (PE CAdditiveExpression')
+      (PI CMultiplicativeExpression)
+      (PI CAdditiveExpression')
   -- - CMultiplicativeExpression CAdditiveExpression'
   | CAdditiveExpression'Sub
-      (PE CMultiplicativeExpression)
-      (PE CAdditiveExpression')
+      (PI CMultiplicativeExpression)
+      (PI CAdditiveExpression')
   deriving (Show, Eq)
 
 -- CCastExpression CMultiplicativeExpression'
 data CMultiplicativeExpression =
   CMultiplicativeExpression
-    (PE CCastExpression)
-    (PE CMultiplicativeExpression')
+    (PI CCastExpression)
+    (PI CMultiplicativeExpression')
   deriving (Show, Eq)
 
 -- empty option not documented in the book
@@ -716,38 +743,38 @@ data CMultiplicativeExpression'
   = CMultiplicativeExpression'Empty
   -- * CCastExpression CMultiplicativeExpression'
   | CMultiplicativeExpression'Mul
-      (PE CCastExpression)
-      (PE CMultiplicativeExpression')
+      (PI CCastExpression)
+      (PI CMultiplicativeExpression')
   -- / CCastExpression CMultiplicativeExpression'
   | CMultiplicativeExpression'Div
-      (PE CCastExpression)
-      (PE CMultiplicativeExpression')
+      (PI CCastExpression)
+      (PI CMultiplicativeExpression')
   -- % CCastExpression CMultiplicativeExpression'
   | CMultiplicativeExpression'Mod
-      (PE CCastExpression)
-      (PE CMultiplicativeExpression')
+      (PI CCastExpression)
+      (PI CMultiplicativeExpression')
   deriving (Show, Eq)
 
 data CCastExpression
   -- CUnaryExpression
-  = CCastExpressionUnary (PE CUnaryExpression)
+  = CCastExpressionUnary (PI CUnaryExpression)
   -- ( CTypeName ) CCastExpression
-  | CCastExpression (PE CTypeName) (PE CCastExpression)
+  | CCastExpression (PI CTypeName) (PI CCastExpression)
   deriving (Show, Eq)
 
 data CUnaryExpression
   -- CPostfixExpression
-  = CUnaryExpressionPostfix (PE CPostfixExpression)
+  = CUnaryExpressionPostfix (PI CPostfixExpression)
   -- ++ CUnaryExpression
-  | CUnaryExpressionInc (PE CUnaryExpression)
+  | CUnaryExpressionInc (PI CUnaryExpression)
   -- -- CUnaryExpression
-  | CUnaryExpressionDec (PE CUnaryExpression)
+  | CUnaryExpressionDec (PI CUnaryExpression)
   -- CUnaryOperator CCastExpression
-  | CUnaryExpressionUnaryOp (PE CUnaryOperator) (PE CCastExpression)
+  | CUnaryExpressionUnaryOp (PI CUnaryOperator) (PI CCastExpression)
   -- sizeof CUnaryExpression
-  | CUnaryExpressionSizeof (PE CUnaryExpression)
+  | CUnaryExpressionSizeof (PI CUnaryExpression)
   -- sizeof ( CTypeName )
-  | CUnaryExpressionSizeofType (PE CTypeName)
+  | CUnaryExpressionSizeofType (PI CTypeName)
   deriving (Show, Eq)
 
 data CUnaryOperator
@@ -761,49 +788,49 @@ data CUnaryOperator
 
 -- CPrimaryExpression CPostfixExpression'
 data CPostfixExpression =
-  CPostfixExpression (PE CPrimaryExpression) (PE CPostfixExpression')
+  CPostfixExpression (PI CPrimaryExpression) (PI CPostfixExpression')
   deriving (Show, Eq)
 
 data CPostfixExpression'
   -- empty
   = CPostfixExpression'Empty
   -- [ CExpression ] CPostfixExpression'
-  | CPostfixExpression'Bracket (PE CExpression) (PE CPostfixExpression')
+  | CPostfixExpression'Bracket (PI CExpression) (PI CPostfixExpression')
   -- ( CArgumentExpressionListOptional ) CPostfixExpression'
   | CPostfixExpression'Paren
-      (PE CArgumentExpressionListOptional)
-      (PE CPostfixExpression')
+      (PI CArgumentExpressionListOptional)
+      (PI CPostfixExpression')
   -- . CIdentifier CPostfixExpression'
-  | CPostfixExpression'Dot (PE CIdentifier) (PE CPostfixExpression')
+  | CPostfixExpression'Dot (PI CIdentifier) (PI CPostfixExpression')
   -- -> CIdentifier CPostfixExpression'
-  | CPostfixExpression'Arrow (PE CIdentifier) (PE CPostfixExpression')
+  | CPostfixExpression'Arrow (PI CIdentifier) (PI CPostfixExpression')
   -- ++ CPostfixExpression'
-  | CPostfixExpression'Inc (PE CPostfixExpression')
+  | CPostfixExpression'Inc (PI CPostfixExpression')
   -- -- CPostfixExpression'
-  | CPostfixExpression'Dec (PE CPostfixExpression')
+  | CPostfixExpression'Dec (PI CPostfixExpression')
   deriving (Show, Eq)
 
 data CPrimaryExpression
   -- CIdentifier
-  = CPrimaryExpressionId (PE CIdentifier)
+  = CPrimaryExpressionId (PI CIdentifier)
   -- CConstant
-  | CPrimaryExpressionConst (PE CConstant)
+  | CPrimaryExpressionConst (PI CConstant)
   -- string literal
-  | CPrimaryExpressionString (PE String)
+  | CPrimaryExpressionString (PI String)
   -- ( CExpression )
-  | CPrimaryExpressionParen (PE CExpression)
+  | CPrimaryExpressionParen (PI CExpression)
   deriving (Show, Eq)
 
 -- CAssignmentExpression CArgumentExpressionList'
 data CArgumentExpressionList =
   CArgumentExpressionList
-    (PE CAssignmentExpression)
-    (PE CArgumentExpressionList')
+    (PI CAssignmentExpression)
+    (PI CArgumentExpressionList')
   deriving (Show, Eq)
 
 data CArgumentExpressionListOptional
   = CArgumentExpressionListOptionalEmpty
-  | CArgumentExpressionListOptional (PE CArgumentExpressionList)
+  | CArgumentExpressionListOptional (PI CArgumentExpressionList)
   deriving (Show, Eq)
 
 data CArgumentExpressionList'
@@ -811,18 +838,18 @@ data CArgumentExpressionList'
   = CArgumentExpressionList'Empty
   -- , CAssignmentExpression CArgumentExpressionList'
   | CArgumentExpressionList'
-      (PE CAssignmentExpression)
-      (PE CArgumentExpressionList')
+      (PI CAssignmentExpression)
+      (PI CArgumentExpressionList')
   deriving (Show, Eq)
 
 data CConstant
   -- int literal
-  = CConstantInt (PE Int)
+  = CConstantInt (PI Int)
   -- char literal
-  | CConstantChar (PE Char)
+  | CConstantChar (PI Char)
   -- float literal
-  | CConstantFloat (PE Double)
+  | CConstantFloat (PI Double)
   -- CIdentifier
-  | CConstantEnum (PE CIdentifier)
+  | CConstantEnum (PI CIdentifier)
   deriving (Show, Eq)
 

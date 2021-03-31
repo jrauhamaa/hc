@@ -24,10 +24,11 @@ data ScanError =
     }
   deriving (Show)
 
-data ScanElement a =
-  ScanElement
+data ScanItem a =
+  ScanItem
     { scanLoc :: Coordinates
-    , scanElem :: a
+    , scanStr :: String
+    , scanItem :: a
     }
   deriving (Show, Eq)
 
@@ -35,21 +36,31 @@ type Input = (Coordinates, String)
 
 newtype Scanner a =
   Scanner
-    { runScanner :: Input -> Either ScanError (Input, ScanElement a)
+    { runScanner :: Input -> Either ScanError (Input, ScanItem a)
     }
 
-instance Functor ScanElement where
-  fmap fab sea = ScanElement (scanLoc sea) (fab $ scanElem sea)
+instance Functor ScanItem where
+  fmap fab sea =
+    ScanItem
+      { scanLoc = scanLoc sea
+      , scanStr = scanStr sea
+      , scanItem = fab $ scanItem sea
+      }
 
-instance Applicative ScanElement where
-  pure a = ScanElement (1, 1) a
-  seab <*> sea = ScanElement (scanLoc seab) (scanElem seab $ scanElem sea)
+instance Applicative ScanItem where
+  pure a = ScanItem (1, 1) "" a
+  seab <*> sea =
+    ScanItem
+      { scanLoc = scanLoc seab
+      , scanStr = scanStr seab ++ scanStr sea
+      , scanItem = scanItem seab $ scanItem sea
+      }
 
 instance Functor Scanner where
   fmap fab sa = Scanner $ (fmap . fmap . fmap) fab . runScanner sa
 
 instance Applicative Scanner where
-  pure a = Scanner $ \input@(l, _) -> Right (input, ScanElement l a)
+  pure a = Scanner $ \input@(l, _) -> Right (input, ScanItem l "" a)
   sab <*> sa =
     Scanner $ \input -> do
       (input', seab) <- runScanner sab input
@@ -68,18 +79,31 @@ instance Alternative Scanner where
 ------------------
 -- MAIN SCANNER --
 ------------------
-scanCCode :: String -> Either ScanError [ScanElement CLexeme]
+scanCCode :: String -> Either ScanError [ScanItem CLexeme]
 scanCCode input = scanCCode' [] ((1, 1), input)
 
 scanCCode' ::
-     [ScanElement CLexeme] -> Input -> Either ScanError [ScanElement CLexeme]
+     [ScanItem CLexeme] -> Input -> Either ScanError [ScanItem CLexeme]
 scanCCode' scanned input =
   case runScanner cScanner input of
     Left e -> Left e
     Right (input', se) ->
       if snd input' == ""
-        then Right $ scanned <> [se, ScanElement (0, 0) LEndMarker]
+        then Right $ scanned <> [se, ScanItem (0, 0) "" LEndMarker]
         else scanCCode' (scanned <> [se]) input'
+
+toFilter :: [CLexeme]
+toFilter = [LWhiteSpace, LComment]
+
+filterWhiteSpace :: [ScanItem CLexeme] -> [ScanItem CLexeme]
+filterWhiteSpace [] = []
+filterWhiteSpace [item]
+  | scanItem item `elem` toFilter = []
+  | otherwise = [item]
+filterWhiteSpace (item@(ScanItem c s a):item'@(ScanItem _ s' _):rest)
+  | scanItem item `elem` toFilter = filterWhiteSpace $ item':rest
+  | scanItem item' `elem` toFilter = filterWhiteSpace $ (ScanItem c (s <> s') a):rest
+  | otherwise = item:(filterWhiteSpace $ item':rest)
 
 cScanner :: Scanner CLexeme
 cScanner
@@ -213,7 +237,7 @@ charS c =
     (l, "") -> Left $ emptyInputError l
     (l, c':rest) ->
       if c == c'
-        then Right ((nextLoc c l, rest), ScanElement l c)
+        then Right ((nextLoc c l, rest), ScanItem l (c:"") c)
         else Left $ unexpectedInputError [c] [c'] l
 
 stringS :: String -> Scanner String
@@ -225,7 +249,7 @@ scanIf f =
     (l, "") -> Left $ emptyInputError l
     (l, c:s) ->
       if f c
-        then Right ((nextLoc c l, s), ScanElement (nextLoc c l) c)
+        then Right ((nextLoc c l, s), ScanItem (nextLoc c l) (c:"") c)
         else Left $ ScanError l "Unexpected input."
 
 spanS :: (Char -> Bool) -> Scanner String
@@ -239,14 +263,14 @@ optionalCharS :: Scanner a -> Scanner [a]
 optionalCharS s =
   Scanner $ \input ->
     case runScanner s input of
-      Left _ -> Right (input, ScanElement (fst input) [])
+      Left _ -> Right (input, ScanItem (fst input) "" [])
       a -> (fmap . fmap) (: []) <$> a
 
 optionalStringS :: Scanner String -> Scanner String
 optionalStringS s =
   Scanner $ \input ->
     case runScanner s input of
-      Left _ -> Right (input, ScanElement (fst input) [])
+      Left _ -> Right (input, ScanItem (fst input) "" [])
       a -> a
 
 escapeChar :: Scanner Char
@@ -563,7 +587,13 @@ multiLineCommentS' previouslyScanned =
   Scanner $ \case
     (l, c1:c2:rest) ->
       if [c1, c2] == "*/"
-        then Right ((l, c1 : c2 : rest), ScanElement l previouslyScanned)
+        then Right
+               ( (l, c1 : c2 : rest)
+               , ScanItem
+                   { scanLoc = l
+                   , scanStr = previouslyScanned
+                   , scanItem = previouslyScanned
+                   })
         else runScanner
                (multiLineCommentS' (previouslyScanned <> [c1]))
                (nextLoc c1 l, c2 : rest)

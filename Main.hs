@@ -2,9 +2,8 @@ module Main where
 
 import System.IO
 
-import Lexeme (CLexeme(..))
 import Parser (parseCCode)
-import Scanner (ScanElement(..), scanCCode)
+import Scanner (scanCCode, filterWhiteSpace)
 
 main :: IO ()
 main = do
@@ -14,10 +13,5 @@ main = do
     (\f -> do
        contents <- hGetContents f
        print $ do
-         scanElems <- scanCCode contents
-         let fltrd =
-               [ l
-               | l <- scanElems
-               , scanElem l `notElem` [LWhiteSpace, LComment]
-               ]
-         return (parseCCode fltrd))
+         scanItems <- scanCCode contents
+         return (parseCCode $ filterWhiteSpace scanItems))
