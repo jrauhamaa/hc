@@ -1,5 +1,7 @@
 module ParseItem where
 
+import qualified Data.Map as M
+
 import Lexeme (CLexeme)
 import Scanner (Coordinates, ScanItem(..))
 
@@ -8,11 +10,12 @@ data ParseItem a =
     { parseLoc :: Coordinates
     , scanItems :: [ScanItem CLexeme]
     , parseItem :: a
+    , symbolTable :: SymbolTable
     }
   deriving (Eq)
 
 instance Show a => Show (ParseItem a) where
-  show (ParseItem l items item) =
+  show (ParseItem l items item _) =
     mconcat
       [ "{ "
       , show l
@@ -20,6 +23,7 @@ instance Show a => Show (ParseItem a) where
       , show $ mconcat $ map scanStr items
       , " "
       , show item
+      , " }"
       ]
 
 instance Functor ParseItem where
@@ -28,26 +32,74 @@ instance Functor ParseItem where
       { parseLoc = parseLoc pia
       , scanItems = scanItems pia
       , parseItem = fab $ parseItem pia
+      , symbolTable = initialSymbols
       }
 
 instance Applicative ParseItem where
-  pure a = ParseItem (1, 1) [] a
-  piab <*> pia =
+  pure a = ParseItem (1, 1) [] a initialSymbols
+  (ParseItem l s fab sym) <*> (ParseItem _ s' a _) =
     ParseItem
-      { parseLoc = parseLoc pia
-      , scanItems = scanItems piab <> scanItems piab
-      , parseItem = parseItem piab $ parseItem pia
+      { parseLoc = l
+      , scanItems = s <> s'
+      , parseItem = fab $ a
+      , symbolTable = sym
       }
 
 type PI = ParseItem
 
-newtype CIdentifier =
-  CIdentifier (PI String)
+data CDataType
+  = TChar
+  | TShort          -- int or short int
+  | TLong
+  | TLongLong
+  | TUChar
+  | TUShort         -- unsigned int or unsigned short
+  | TULong
+  | TULonglong
+  | TFloat
+  | TDouble
+  | TLongDouble
+  | TPointer CType
+  | TArray CType
+  | TUnion [CDataType]
+  | TStruct (M.Map String CType)
+  | TFunction CType [CType]
+  | TVarArgFunction CDataType [CType]
+  | TEnum (M.Map String Int)
+  | TVoid
   deriving (Show, Eq)
+
+data CType =
+  CType
+    { storageClass  :: [CStorageClassSpecifier]
+    , typeQualifier :: [CTypeQualifier]
+    , dataType      :: CDataType
+    }
+  deriving (Show, Eq)
+
+data SymbolTable =
+  SymbolTable
+    { typedef :: M.Map String (Coordinates, CDataType)
+    , symbols :: M.Map String (Coordinates, CDataType)
+    , parent  :: Maybe SymbolTable
+    }
+  deriving (Show, Eq)
+
+initialSymbols :: SymbolTable
+initialSymbols =
+  SymbolTable
+    { typedef = M.empty
+    , symbols = M.empty
+    , parent = Nothing
+    }
 
 ----------------
 -- PARSEITEMS --
 ----------------
+
+newtype CIdentifier =
+  CIdentifier String
+  deriving (Show, Eq)
 
 data CIdentifierOptional
   = CIdentifierOptionalEmpty
