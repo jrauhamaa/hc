@@ -15,12 +15,10 @@ data ParseItem a =
   deriving (Eq)
 
 instance Show a => Show (ParseItem a) where
-  show (ParseItem l items item _) =
+  show (ParseItem l _ item _) =
     mconcat
       [ "{ "
       , show l
-      , " "
-      , show $ mconcat $ map scanStr items
       , " "
       , show item
       , " }"
@@ -55,16 +53,16 @@ data CDataType
   | TUChar
   | TUShort         -- unsigned int or unsigned short
   | TULong
-  | TULonglong
+  | TULongLong
   | TFloat
   | TDouble
   | TLongDouble
   | TPointer CType
   | TArray CType
-  | TUnion [CDataType]
-  | TStruct (M.Map String CType)
-  | TFunction CType [CType]
-  | TVarArgFunction CDataType [CType]
+  | TUnion (M.Map String CType)
+  | TStruct [(CDataType, Maybe String, Maybe Int)]
+  | TFunction CType [(String, CType)]
+  | TVarArgFunction CType [(String, CType)]
   | TEnum (M.Map String Int)
   | TVoid
   deriving (Show, Eq)
@@ -79,8 +77,8 @@ data CType =
 
 data SymbolTable =
   SymbolTable
-    { typedef :: M.Map String (Coordinates, CDataType)
-    , symbols :: M.Map String (Coordinates, CDataType)
+    { typedef :: M.Map String (Coordinates, CType)
+    , symbols :: M.Map String (Coordinates, CType)
     , parent  :: Maybe SymbolTable
     }
   deriving (Show, Eq)

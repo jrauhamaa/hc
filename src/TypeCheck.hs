@@ -1,5 +1,8 @@
 module IR where
 
+import qualified Data.Set as S
+import qualified Data.Map as M
+
 import Scanner (Coordinates)
 import ParseItem
 
@@ -70,20 +73,9 @@ tExternalDeclaration (ParseItem l s (CExternalDeclaration decl) _) sym = do
   let sym' = symbolTable decl'
   return $ ParseItem l s (CExternalDeclaration decl') sym'
 
-functionType ::
-     PI CDeclarationSpecifiersOptional
-  -> PI CDeclarator
-  -> PI CDeclarationListOptional
-  -> SymbolTable
-  -> (String, CType)
-functionType = undefined
-
-addSymbol :: SymbolTable -> String -> CType -> Either TypeError SymbolTable
-addSymbol = undefined
-
 tFunctionDefinition :: TypeAnnotate CFunctionDefinition
 tFunctionDefinition (ParseItem l s (CFunctionDefinition spec decl declList compStatement) _) sym = do
-  let (fName, fType) = functionType spec decl declList sym
+  (fName, fType) <- functionType spec decl declList sym
   spec'          <- tDeclarationSpecifiersOptional spec sym
   decl'          <- tDeclarator decl $ symbolTable spec'
   declSym        <- addSymbol (symbolTable decl') fName fType
@@ -1073,6 +1065,5 @@ tArgumentExpressionList' (ParseItem l s (CArgumentExpressionList' expr exprList)
   return $ ParseItem l s (CArgumentExpressionList' expr' exprList') sym'
 
 tConstant :: TypeAnnotate CConstant
-tConstant (ParseItem l s c _) sym =
-  return $ ParseItem l s c sym
+tConstant i = Right . addSymbols i
 
