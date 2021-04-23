@@ -88,8 +88,9 @@ initialSymbols :: SymbolTable
 initialSymbols =
   SymbolTable
     { typedef = M.empty
+    , labels  = M.empty
     , symbols = M.empty
-    , parent = Nothing
+    , parent  = Nothing
     }
 
 ----------------

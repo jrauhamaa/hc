@@ -670,8 +670,16 @@ cDirectAbstractDeclaratorP :: PIParser CDirectAbstractDeclarator
 cDirectAbstractDeclaratorP =
   parserToPIParser $
   liftA2
-    CDirectAbstractDeclarator
+    CDirectAbstractDeclaratorParen
     (parenthesisP cAbstractDeclaratorP)
+    cDirectAbstractDeclaratorP' <|>
+  liftA2
+    CDirectAbstractDeclaratorIndexed
+    (braceP cConstantExpressionOptionalP)
+    cDirectAbstractDeclaratorP' <|>
+  liftA2
+    CDirectAbstractDeclaratorParams
+    (braceP cParameterTypeListOptionalP)
     cDirectAbstractDeclaratorP'
 
 cDirectAbstractDeclaratorP' :: PIParser CDirectAbstractDeclarator'
