@@ -58,10 +58,10 @@ data CDataType
   | TDouble
   | TLongDouble
   | TPointer CType
-  | TArray CType
+  | TArray CType (Maybe Int)
   | TUnion (M.Map String CType)
   | TStruct [(CDataType, Maybe String, Maybe Int)]
-  | TFunction CType [(String, CType)]
+  | TFunction CType [CType]
   | TVarArgFunction CType [(String, CType)]
   | TEnum (M.Map String Int)
   | TVoid
@@ -78,6 +78,7 @@ data CType =
 data SymbolTable =
   SymbolTable
     { typedef :: M.Map String (Coordinates, CType)
+    , labels  :: M.Map String Coordinates
     , symbols :: M.Map String (Coordinates, CType)
     , parent  :: Maybe SymbolTable
     }
@@ -476,8 +477,17 @@ data CAbstractDeclaratorOptional
 
 -- ( CAbstractDeclarator ) CDirectAbstractDeclarator'
 data CDirectAbstractDeclarator
-  = CDirectAbstractDeclarator
+  -- ( CAbstractDeclarator ) CDirectAbstractDeclarator'
+  = CDirectAbstractDeclaratorParen
       (PI CAbstractDeclarator)
+      (PI CDirectAbstractDeclarator')
+  -- [ CConstantExpressionOptional ] CDirectAbstractDeclarator'
+  | CDirectAbstractDeclaratorIndexed
+      (PI CConstantExpressionOptional)
+      (PI CDirectAbstractDeclarator')
+  -- ( CParameterTypeListOptional ) CDirectAbstractDeclarator'
+  | CDirectAbstractDeclaratorParams
+      (PI CParameterTypeListOptional)
       (PI CDirectAbstractDeclarator')
   deriving (Show, Eq)
 
