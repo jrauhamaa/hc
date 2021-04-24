@@ -59,10 +59,10 @@ data CDataType
   | TLongDouble
   | TPointer CType
   | TArray CType (Maybe Int)
-  | TUnion (M.Map String CType)
+  | TUnion (M.Map String CDataType)
   | TStruct [(CDataType, Maybe String, Maybe Int)]
   | TFunction CType [CType]
-  | TVarArgFunction CType [(String, CType)]
+  | TVarArgFunction CType [CType]
   | TEnum (M.Map String Int)
   | TVoid
   deriving (Show, Eq)
