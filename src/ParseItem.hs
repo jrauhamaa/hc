@@ -2,20 +2,18 @@ module ParseItem where
 
 import qualified Data.Map as M
 
-import Lexeme (CLexeme)
-import Scanner (Coordinates, ScanItem(..))
+import Scanner (Coordinates)
 
 data ParseItem a =
   ParseItem
     { parseLoc :: Coordinates
-    , scanItems :: [ScanItem CLexeme]
     , parseItem :: a
     , symbolTable :: SymbolTable
     }
   deriving (Eq)
 
 instance Show a => Show (ParseItem a) where
-  show (ParseItem l _ item _) =
+  show (ParseItem l item _) =
     mconcat
       [ "{ "
       , show l
@@ -28,17 +26,15 @@ instance Functor ParseItem where
   fmap fab pia =
     ParseItem
       { parseLoc = parseLoc pia
-      , scanItems = scanItems pia
       , parseItem = fab $ parseItem pia
       , symbolTable = initialSymbols
       }
 
 instance Applicative ParseItem where
-  pure a = ParseItem (1, 1) [] a initialSymbols
-  (ParseItem l s fab sym) <*> (ParseItem _ s' a _) =
+  pure a = ParseItem (1, 1) a initialSymbols
+  (ParseItem l fab sym) <*> (ParseItem _ a _) =
     ParseItem
       { parseLoc = l
-      , scanItems = s <> s'
       , parseItem = fab $ a
       , symbolTable = sym
       }
@@ -77,9 +73,9 @@ data CType =
 
 data SymbolTable =
   SymbolTable
-    { typedef :: M.Map String (Coordinates, CType)
+    { typedef :: M.Map String CType
     , labels  :: M.Map String Coordinates
-    , symbols :: M.Map String (Coordinates, CType)
+    , symbols :: M.Map String CType
     , parent  :: Maybe SymbolTable
     }
   deriving (Show, Eq)

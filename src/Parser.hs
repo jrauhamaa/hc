@@ -70,7 +70,7 @@ parserToPIParser p =
     [] -> Left unexpectedEof
     input@((ScanItem c _ _):_) -> do
       (parsed, notParsed, a) <- runParser p input
-      return (parsed, notParsed, ParseItem c parsed a initialSymbols)
+      return (parsed, notParsed, ParseItem c a initialSymbols)
 
 unexpectedEof :: ParseError
 unexpectedEof = ParseError (0, 0) "Unexpected EOF"
@@ -102,7 +102,7 @@ intLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
     (scanned@(ScanItem c _ (LIntLiteral x)):rest) ->
-      Right ([scanned], rest, ParseItem c [scanned] x initialSymbols)
+      Right ([scanned], rest, ParseItem c x initialSymbols)
     ((ScanItem c _ l):_) -> Left $ unexpectedLexeme c "LIntLiteral" $ show l
 
 floatLiteralP :: PIParser Double
@@ -110,7 +110,7 @@ floatLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
     (scanned@(ScanItem c _ (LFloatLiteral x)):rest) ->
-      Right ([scanned], rest, ParseItem c [scanned] x initialSymbols)
+      Right ([scanned], rest, ParseItem c x initialSymbols)
     ((ScanItem c _ l):_) -> Left $ unexpectedLexeme c "LFloatLiteral" $ show l
 
 charLiteralP :: PIParser Char
@@ -118,7 +118,7 @@ charLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
     (scanned@(ScanItem c _ (LCharLiteral x)):rest) ->
-      Right ([scanned], rest, ParseItem c [scanned] x initialSymbols)
+      Right ([scanned], rest, ParseItem c x initialSymbols)
     ((ScanItem c _ l):_) -> Left $ unexpectedLexeme c "LCharLiteral" $ show l
 
 stringLiteralP :: PIParser String
@@ -126,7 +126,7 @@ stringLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
     (scanned@(ScanItem c _ (LStringLiteral x)):rest) ->
-      Right ([scanned], rest, ParseItem c [scanned] x initialSymbols)
+      Right ([scanned], rest, ParseItem c x initialSymbols)
     ((ScanItem c _ l):_) -> Left $ unexpectedLexeme c "LStringLiteral" $ show l
 
 labelP :: Parser String

@@ -7,9 +7,6 @@ import qualified Data.Set as S
 import ParseItem
 import Scanner (Coordinates)
 
-addSymbols :: ParseItem a -> SymbolTable -> ParseItem a
-addSymbols (ParseItem l s i _) = ParseItem l s i
-
 data TypeError =
   TypeError
     { errorLoc :: Coordinates
@@ -32,7 +29,7 @@ lookupSymbols s sym =
     Just sym' -> v <|> lookupSymbols s sym'
     Nothing -> v
   where
-    v = snd <$> (M.lookup s (symbols sym) <|> M.lookup s (typedef sym))
+    v = M.lookup s (symbols sym) <|> M.lookup s (typedef sym)
 
 
 
@@ -146,7 +143,7 @@ readTypeQualifiers :: TypeReader CTypeQualifierListOptional [CTypeQualifier]
 readTypeQualifiers item =
   case typeCheckItem item of
     CTypeQualifierListOptionalEmpty -> Right []
-    CTypeQualifierListOptional (ParseItem _ _ (CTypeQualifierList qualifier list) _) -> do
+    CTypeQualifierListOptional (ParseItem { parseItem = CTypeQualifierList qualifier list }) -> do
       listTail <- readTypeQualifiers $ item { typeCheckItem = parseItem list }
       return $ (parseItem qualifier) : listTail
 
@@ -179,6 +176,39 @@ readDeclarationSpecifiers item = do
       , typeQualifier = typeQualifiers'
       , dataType = typeSpecifier'
       }
+
+readDeclarationSpecifiersTypedef :: TypeReader CDeclarationSpecifiers ([String], CType)
+readDeclarationSpecifiersTypedef item = do
+  (storageClasses, typeQualifiers, typeSpecifiers) <- readDeclarationSpecifierList item
+  storageClasses' <-
+    validateStorageClasses $
+      item { typeCheckItem =
+               filter (/= CStorageClassSpecifierTypedef) storageClasses
+           }
+  typeQualifiers' <- validateTypeQualifiers $ item { typeCheckItem = typeQualifiers }
+  typeSpecifier' <-
+    validateTypeSpecifiers $
+      item { typeCheckItem = filter (not . isTypedefName) typeSpecifiers }
+  let typedefLabels = map getTypedefName $ filter isTypedefName typeSpecifiers
+  return
+    ( typedefLabels
+    , CType
+        { storageClass = storageClasses'
+        , typeQualifier = typeQualifiers'
+        , dataType = typeSpecifier'
+        }
+    )
+  where
+    isTypedefName x =
+      case x of
+        CTypeSpecifierTypedef _ -> True
+        _ -> False
+    getTypedefName (CTypeSpecifierTypedef typedefName) =
+      i
+      where
+        (CTypedefName identifier) = parseItem typedefName
+        (CIdentifier i) = parseItem identifier
+    getTypedefName _ = error "Internal error"
 
 readDeclarationSpecifierList ::
   TypeReader
@@ -306,7 +336,7 @@ readStructOrUnionSpecifier
   let name =
         case parseItem identifierOpt of
           CIdentifierOptionalEmpty -> Nothing
-          CIdentifierOptional (ParseItem _ _ (CIdentifier i) _) -> Just i
+          CIdentifierOptional (ParseItem { parseItem = CIdentifier i }) -> Just i
   if (length $ S.fromList identifiers) /= length identifiers
     then Left $ TypeError c "Conflicting identifiers"
     else case parseItem structOrUnion of
@@ -396,7 +426,7 @@ readTypedefName
            CTypedefName (ParseItem { parseItem = CIdentifier identifier } )
        }) =
   case M.lookup identifier $ typedef sym of
-    Just (_, t) -> Right $ dataType t
+    Just t -> Right $ dataType t
     Nothing -> Left $ TypeError c $ "Unknown typedef name '" ++ identifier ++ "'."
 
 ---------------
@@ -494,7 +524,7 @@ readFunctionDeclaration
   case parseItem directDeclarator of
     CDirectDeclaratorParen _ _ ->
       Left $ TypeError c "Invalid function declaration"
-    CDirectDeclaratorId (ParseItem _ _ (CIdentifier fName) _) decl ->
+    CDirectDeclaratorId (ParseItem { parseItem = CIdentifier fName }) decl ->
       case parseItem decl of
         (CDirectDeclarator'ParamTypeList typeList decl') ->
           case parseItem decl' of
@@ -536,7 +566,7 @@ readFunctionDeclaration
   case parseItem directDeclarator of
     CDirectDeclaratorParen _ _ ->
       Left $ TypeError c "Invalid function declaration"
-    CDirectDeclaratorId (ParseItem _ _ (CIdentifier fName) _) decl ->
+    CDirectDeclaratorId (ParseItem { parseItem = CIdentifier fName }) decl ->
       case parseItem decl of
         (CDirectDeclarator'IdList idList decl') ->
           case parseItem decl' of
@@ -612,30 +642,73 @@ readInitDeclaratorList
   listTail <- readInitDeclaratorList' $ item { typeCheckItem = parseItem list }
   return $ d : listTail
 
-readDeclaration :: TypeReader CDeclaration [(Bool, String, CType)]
+isTypeDef :: TypeReader CDeclarationSpecifiers Bool
+isTypeDef item = do
+  (storageClasses, _, _) <- readDeclarationSpecifierList item
+  return $ CStorageClassSpecifierTypedef `elem` storageClasses
+
+-- (typedef?, [(assigned?, label, type)]
+readDeclaration :: TypeReader CDeclaration (Bool, [(Bool, String, CType)])
 readDeclaration
-     item@(TypeCheckItem { typeCheckItem = CDeclaration spec initDeclarators }) =
-  case parseItem initDeclarators of
-    CInitDeclaratorListOptionalEmpty ->
-      Left $ TypeError (parseLoc initDeclarators) "No identifier specified"
-    CInitDeclaratorListOptional list -> do
-      t <- readDeclarationSpecifiers $ item { typeCheckLoc = parseLoc initDeclarators
-                                            , typeCheckItem = parseItem spec
-                                            }
-      readInitDeclaratorList $ item { previousType = t
-                                    , typeCheckItem =  parseItem list
-                                    }
+     item@(TypeCheckItem { typeCheckItem = CDeclaration spec initDeclarators
+                         , typeCheckLoc = l
+                         }) = do
+  td <- isTypeDef $ item { typeCheckItem = parseItem spec }
+  if td
+    then
+      case parseItem initDeclarators of
+        CInitDeclaratorListOptionalEmpty -> do
+          (typedefLabels, t) <-
+            readDeclarationSpecifiersTypedef $
+              item { typeCheckLoc = parseLoc spec
+                   , typeCheckItem = parseItem spec }
+          return ( True
+                 , (map (\label -> (False, label, t)) typedefLabels)
+                 )
+        CInitDeclaratorListOptional list -> do
+          (typedefLabels, t) <-
+            readDeclarationSpecifiersTypedef $
+              item { typeCheckLoc = parseLoc spec
+                   , typeCheckItem = parseItem spec }
+          d <- readInitDeclaratorList $ item { previousType = t
+                                             , typeCheckItem =  parseItem list
+                                             }
+          if all (\(a, _, _) -> not a) d
+            then
+              return
+                ( True
+                , (map (\label -> (False, label, t)) typedefLabels) ++ d
+                )
+            else
+              Left $ TypeError l "Value assigned to typedef declaration"
+    else
+      case parseItem initDeclarators of
+        CInitDeclaratorListOptionalEmpty ->
+          Left $ TypeError l "No identifier specified"
+        CInitDeclaratorListOptional list -> do
+          t <- readDeclarationSpecifiers $ item { typeCheckLoc = parseLoc initDeclarators
+                                                , typeCheckItem = parseItem spec
+                                                }
+          d <- readInitDeclaratorList $ item { previousType = t
+                                             , typeCheckItem =  parseItem list
+                                             }
+          return (False, d)
 
 readDeclarationList :: TypeReader CDeclarationList [(Bool, String, CType)]
 readDeclarationList
      item@(TypeCheckItem { typeCheckItem = CDeclarationList decl listOpt }) =
   case parseItem listOpt of
-    CDeclarationListOptionalEmpty ->
-      readDeclaration $ item { typeCheckItem = parseItem decl }
+    CDeclarationListOptionalEmpty -> do
+      d <- readDeclaration $ item { typeCheckItem = parseItem decl }
+      if fst d
+        then Left $ TypeError (typeCheckLoc item) "Typedef declaration inside a declaration list"
+        else return $ snd d
     CDeclarationListOptional list -> do
       listHead <- readDeclaration $ item { typeCheckItem = parseItem decl }
       listTail <- readDeclarationList $ item { typeCheckItem = parseItem list }
-      return $ listHead ++ listTail
+      if fst listHead
+        then Left $ TypeError (typeCheckLoc item) "Typedef declaration inside a declaration list"
+        else return $ (snd listHead) ++ listTail
 
 -----------------
 -- DECLARATORS --
@@ -694,7 +767,7 @@ readDirectDeclarator
      item@(TypeCheckItem
             { typeCheckItem =
                (CDirectDeclaratorId
-                 (ParseItem _ _ (CIdentifier identifier) _)
+                 (ParseItem { parseItem = CIdentifier identifier })
                  directDecl')
             }) = do
   t' <- readDirectDeclarator' $ item { typeCheckItem = parseItem directDecl' }
