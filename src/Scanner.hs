@@ -8,21 +8,11 @@ import Data.Char
 import Numeric
 
 import Lexeme (CLexeme(..))
+import Utils (Coordinates, Error(..))
 
 -----------
 -- TYPES --
 -----------
-
-type Row = Int
-type Col = Int
-type Coordinates = (Row, Col)
-
-data ScanError =
-  ScanError
-    { errorLoc :: Coordinates
-    , errorMsg :: String
-    }
-  deriving (Show)
 
 data ScanItem a =
   ScanItem
@@ -36,7 +26,7 @@ type Input = (Coordinates, String)
 
 newtype Scanner a =
   Scanner
-    { runScanner :: Input -> Either ScanError (Input, ScanItem a)
+    { runScanner :: Input -> Either Error (Input, ScanItem a)
     }
 
 instance Functor ScanItem where
@@ -67,11 +57,6 @@ instance Applicative Scanner where
       (input'', sea) <- runScanner sa input'
       return (input'', seab <*> sea)
 
-instance Alternative (Either ScanError) where
-  empty = Left $ ScanError (1, 1) "empty"
-  Left _ <|> e2 = e2
-  e1 <|> _ = e1
-
 instance Alternative Scanner where
   empty = Scanner $ const empty
   Scanner s1 <|> Scanner s2 = Scanner $ \input -> s1 input <|> s2 input
@@ -79,11 +64,11 @@ instance Alternative Scanner where
 ------------------
 -- MAIN SCANNER --
 ------------------
-scanCCode :: String -> Either ScanError [ScanItem CLexeme]
+scanCCode :: String -> Either Error [ScanItem CLexeme]
 scanCCode input = scanCCode' [] ((1, 1), input)
 
 scanCCode' ::
-     [ScanItem CLexeme] -> Input -> Either ScanError [ScanItem CLexeme]
+     [ScanItem CLexeme] -> Input -> Either Error [ScanItem CLexeme]
 scanCCode' scanned input =
   case runScanner cScanner input of
     Left e -> Left e
@@ -213,10 +198,10 @@ cScanner
 -----------
 -- UTILS --
 -----------
-emptyInputError :: Coordinates -> ScanError
+emptyInputError :: Coordinates -> Error
 emptyInputError location = ScanError location "Unexpected end of input"
 
-unexpectedInputError :: String -> String -> Coordinates -> ScanError
+unexpectedInputError :: String -> String -> Coordinates -> Error
 unexpectedInputError expected encountered location =
   ScanError location $
   mconcat

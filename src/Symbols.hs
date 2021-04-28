@@ -5,13 +5,14 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 
 import ParseItem
-import Scanner (Coordinates)
-
-data TypeError =
-  TypeError
-    { errorLoc :: Coordinates
-    , errorMsg :: String
-    }
+import Utils ( Coordinates
+             , Error(..)
+             , DataType(..)
+             , StorageClass(..)
+             , TypeQualifier(..)
+             , CType(..)
+             , SymbolTable(..)
+             )
 
 data TypeCheckItem a =
   TypeCheckItem
@@ -21,7 +22,7 @@ data TypeCheckItem a =
     , typeCheckLoc  :: Coordinates  -- coordinates for possible error message
     }
 
-type TypeReader a b = TypeCheckItem a -> Either TypeError b
+type TypeReader a b = TypeCheckItem a -> Either Error b
 
 lookupSymbols :: String -> SymbolTable -> Maybe CType
 lookupSymbols s sym =
@@ -31,24 +32,38 @@ lookupSymbols s sym =
   where
     v = M.lookup s (symbols sym) <|> M.lookup s (typedef sym)
 
+updateTCItem :: TypeCheckItem a -> ParseItem b -> TypeCheckItem b
+updateTCItem old item = old { typeCheckItem = parseItem item
+                            , typeCheckLoc = parseLoc item
+                            }
 
+toQualifier :: CTypeQualifier -> TypeQualifier
+toQualifier CTypeQualifierConst = TQConst
+toQualifier CTypeQualifierVolatile = TQVolatile
+
+toStorageClass :: CStorageClassSpecifier -> StorageClass
+toStorageClass CStorageClassSpecifierAuto = SCAuto
+toStorageClass CStorageClassSpecifierRegister = SCRegister
+toStorageClass CStorageClassSpecifierStatic = SCStatic
+toStorageClass CStorageClassSpecifierExtern = SCExtern
+toStorageClass CStorageClassSpecifierTypedef = SCTypedef
 
 ---------------------
 -- SPECIFIER LISTS --
 ---------------------
 
 validateStorageClasses ::
-     TypeReader [CStorageClassSpecifier] [CStorageClassSpecifier]
+     TypeReader [StorageClass] [StorageClass]
 validateStorageClasses item
   | length (typeCheckItem item) > 1 =
       Left $ TypeError (typeCheckLoc item) "Multiple storage classes"
   | otherwise = Right $ typeCheckItem item
 
-validateTypeSpecifiers :: TypeReader [CTypeSpecifier] CDataType
+validateTypeSpecifiers :: TypeReader [CTypeSpecifier] DataType
 validateTypeSpecifiers item@(TypeCheckItem { typeCheckLoc = c, typeCheckItem = spec })
   | length spec == 0 = Left $ TypeError c "Type unspecified"
   | length lengthSpec > 2 = Left $ TypeError c "Too many type size specifiers"
-  | length dataTypes > 1 = Left $ TypeError c "Too many datatype specifiers"
+  | length dataTypes > 1 = Left $ TypeError c $ "Too many datatype specifiers:" ++ show dataTypes
   | length signedSpec > 1 =
     Left $ TypeError c "Too many datatype sign specifiers"
   -- long long int
@@ -102,11 +117,11 @@ validateTypeSpecifiers item@(TypeCheckItem { typeCheckLoc = c, typeCheckItem = s
       CTypeSpecifierFloat -> Right TFloat
       CTypeSpecifierDouble -> Right TDouble
       CTypeSpecifierEnum enumSpec ->
-        readEnumSpecifier $ item { typeCheckItem = parseItem $ enumSpec }
+        readEnumSpecifier $ updateTCItem item enumSpec
       CTypeSpecifierStructOrUnion structOrUnionSpec ->
-        readStructOrUnionSpecifier $ item { typeCheckItem = parseItem structOrUnionSpec }
+        readStructOrUnionSpecifier $ updateTCItem item structOrUnionSpec
       CTypeSpecifierTypedef t ->
-        readTypedefName $ item { typeCheckItem = parseItem t }
+        readTypedefName $ updateTCItem item t
       _ -> Left $ TypeError c "Internal error reading type"  -- this shoudn't happen
   where
     lengthSpec = filter (`elem` [CTypeSpecifierLong, CTypeSpecifierShort]) spec
@@ -121,48 +136,50 @@ validateTypeSpecifiers item@(TypeCheckItem { typeCheckLoc = c, typeCheckItem = s
     signedSpec =
       filter (`elem` [CTypeSpecifierSigned, CTypeSpecifierUnsigned]) spec
 
-validateTypeQualifiers :: TypeReader [CTypeQualifier] [CTypeQualifier]
+validateTypeQualifiers :: TypeReader [TypeQualifier] [TypeQualifier]
 validateTypeQualifiers (TypeCheckItem { typeCheckLoc = c, typeCheckItem = spec })
   | length spec > 2 = Left $ TypeError c "Repeated type qualifiers"
-  | spec == [CTypeQualifierConst, CTypeQualifierConst] =
+  | spec == [TQConst, TQConst] =
     Left $ TypeError c "Repeated type qualifiers"
-  | spec == [CTypeQualifierVolatile, CTypeQualifierVolatile] =
+  | spec == [TQVolatile, TQVolatile] =
     Left $ TypeError c "Repeated type qualifiers"
   | otherwise = Right spec
 
 validateFunctionStorageClasses ::
-     TypeReader [CStorageClassSpecifier] [CStorageClassSpecifier]
+     TypeReader [StorageClass] [StorageClass]
 validateFunctionStorageClasses (TypeCheckItem { typeCheckLoc = c, typeCheckItem = spec }) =
-  if spec `elem`
-     [[], [CStorageClassSpecifierExtern], [CStorageClassSpecifierStatic]]
+  if spec `elem` [[], [SCExtern], [SCStatic]]
     then Right spec
     else Left $
          TypeError c "Illegal storage class specifier in function definition"
 
-readTypeQualifiers :: TypeReader CTypeQualifierListOptional [CTypeQualifier]
+readTypeQualifiers :: TypeReader CTypeQualifierListOptional [TypeQualifier]
 readTypeQualifiers item =
   case typeCheckItem item of
     CTypeQualifierListOptionalEmpty -> Right []
     CTypeQualifierListOptional (ParseItem { parseItem = CTypeQualifierList qualifier list }) -> do
-      listTail <- readTypeQualifiers $ item { typeCheckItem = parseItem list }
-      return $ (parseItem qualifier) : listTail
+      listTail <- readTypeQualifiers $ updateTCItem item list
+      return $ (toQualifier $ parseItem qualifier) : listTail
 
 readSpecifierQualifierList ::
-     TypeReader CSpecifierQualifierList ([CTypeSpecifier], [CTypeQualifier])
+     TypeReader CSpecifierQualifierList ([CTypeSpecifier], [TypeQualifier])
 readSpecifierQualifierList item =
   case typeCheckItem item of
     (CSpecifierQualifierListSpecifier spec list) ->
       case parseItem list of
         CSpecifierQualifierListOptional list' -> do
-          (specifiers, qualifiers) <- readSpecifierQualifierList $ item { typeCheckItem = parseItem list' }
+          (specifiers, qualifiers) <-
+            readSpecifierQualifierList $ updateTCItem item list'
           return (parseItem spec : specifiers, qualifiers)
         CSpecifierQualifierListOptionalEmpty -> return ([parseItem spec], [])
     (CSpecifierQualifierListQualifier qualifier list) ->
       case parseItem list of
         CSpecifierQualifierListOptional list' -> do
-          (specifiers, qualifiers) <- readSpecifierQualifierList $ item { typeCheckItem = parseItem list' }
-          return (specifiers, parseItem qualifier : qualifiers)
-        CSpecifierQualifierListOptionalEmpty -> return ([], [parseItem qualifier])
+          (specifiers, qualifiers) <-
+            readSpecifierQualifierList $ updateTCItem item list'
+          return (specifiers, (toQualifier $ parseItem qualifier) : qualifiers)
+        CSpecifierQualifierListOptionalEmpty ->
+          return ([], [toQualifier $ parseItem qualifier])
 
 readDeclarationSpecifiers :: TypeReader CDeclarationSpecifiers CType
 readDeclarationSpecifiers item = do
@@ -183,7 +200,7 @@ readDeclarationSpecifiersTypedef item = do
   storageClasses' <-
     validateStorageClasses $
       item { typeCheckItem =
-               filter (/= CStorageClassSpecifierTypedef) storageClasses
+               filter (/= SCTypedef) storageClasses
            }
   typeQualifiers' <- validateTypeQualifiers $ item { typeCheckItem = typeQualifiers }
   typeSpecifier' <-
@@ -213,25 +230,27 @@ readDeclarationSpecifiersTypedef item = do
 readDeclarationSpecifierList ::
   TypeReader
     CDeclarationSpecifiers
-    ([CStorageClassSpecifier], [CTypeQualifier], [CTypeSpecifier])
+    ([StorageClass], [TypeQualifier], [CTypeSpecifier])
 readDeclarationSpecifierList
      item@(TypeCheckItem
             { typeCheckItem = CDeclarationSpecifiersStorageClass spec list }) =
   case parseItem list of
     CDeclarationSpecifiersOptionalEmpty ->
-      return ([parseItem spec], [], [])
+      return ([toStorageClass $ parseItem spec], [], [])
     (CDeclarationSpecifiersOptional spec') -> do
-      (storageCls, qualifiers, specifiers) <- readDeclarationSpecifierList $ item { typeCheckItem =  parseItem spec' }
-      return (parseItem spec : storageCls, qualifiers, specifiers)
+      (storageCls, qualifiers, specifiers) <-
+        readDeclarationSpecifierList $ updateTCItem item spec'
+      return ((toStorageClass $ parseItem spec) : storageCls, qualifiers, specifiers)
 readDeclarationSpecifierList
      item@(TypeCheckItem
             { typeCheckItem = CDeclarationSpecifiersTypeQualifier spec list }) =
   case parseItem list of
     CDeclarationSpecifiersOptionalEmpty ->
-      return ([], [parseItem spec], [])
+      return ([], [toQualifier $ parseItem spec], [])
     (CDeclarationSpecifiersOptional spec') -> do
-      (storageCls, qualifiers, specifiers) <- readDeclarationSpecifierList $ item { typeCheckItem = parseItem spec' }
-      return (storageCls, parseItem spec : qualifiers, specifiers)
+      (storageCls, qualifiers, specifiers) <-
+        readDeclarationSpecifierList $ updateTCItem item spec'
+      return (storageCls, (toQualifier $ parseItem spec) : qualifiers, specifiers)
 readDeclarationSpecifierList
      item@(TypeCheckItem
             { typeCheckItem = CDeclarationSpecifiersTypeSpecifier spec list }) =
@@ -239,7 +258,8 @@ readDeclarationSpecifierList
     CDeclarationSpecifiersOptionalEmpty ->
       return ([], [], [parseItem spec])
     (CDeclarationSpecifiersOptional spec') -> do
-      (storageCls, qualifiers, specifiers) <- readDeclarationSpecifierList $ item { typeCheckItem = parseItem spec' }
+      (storageCls, qualifiers, specifiers) <-
+        readDeclarationSpecifierList $ updateTCItem item spec'
       return (storageCls, qualifiers, parseItem spec : specifiers)
 
 ----------------------
@@ -262,18 +282,18 @@ readEnumeratorList' (TypeCheckItem { typeCheckItem = CEnumeratorList'Empty }) =
   Right []
 readEnumeratorList'
      item@(TypeCheckItem { typeCheckItem = CEnumeratorList' enum list}) = do
-  listHead <- readEnumerator $ item { typeCheckItem = parseItem enum }
-  listTail <- readEnumeratorList' $ item { typeCheckItem = parseItem list }
+  listHead <- readEnumerator $ updateTCItem item enum
+  listTail <- readEnumeratorList' $ updateTCItem item list
   return $ listHead : listTail
 
 readEnumeratorList :: TypeReader CEnumeratorList (M.Map String Int)
 readEnumeratorList
      item@(TypeCheckItem { typeCheckItem = CEnumeratorList enum list }) = do
-  listHead <- readEnumerator $ item { typeCheckItem = parseItem enum }
-  listTail <- readEnumeratorList' $ item { typeCheckItem = parseItem list }
+  listHead <- readEnumerator $ updateTCItem item enum
+  listTail <- readEnumeratorList' $ updateTCItem item list
   return $ M.fromList $ listHead : listTail
 
-readEnumSpecifier :: TypeReader CEnumSpecifier CDataType
+readEnumSpecifier :: TypeReader CEnumSpecifier DataType
 readEnumSpecifier
      (TypeCheckItem
        { typeCheckLoc = c
@@ -294,11 +314,12 @@ readEnumSpecifier
                      CIdentifierOptional identifier' ->
                        Just i
                        where CIdentifier i = parseItem identifier'
-  enumList' <- readEnumeratorList $ item { typeCheckItem = parseItem enumList }
+  enumList' <-
+    readEnumeratorList $ updateTCItem item enumList
   return $ TEnum identifier enumList'
 
 readStructOrUnionSpecifier ::
-     TypeReader CStructOrUnionSpecifier CDataType
+     TypeReader CStructOrUnionSpecifier DataType
 readStructOrUnionSpecifier
      (TypeCheckItem
        { typeCheckLoc = c
@@ -331,7 +352,8 @@ readStructOrUnionSpecifier
             , typeCheckItem =
                 CStructOrUnionSpecifierList structOrUnion identifierOpt decl
             }) = do
-  declarations <- readStructDeclarationList $ item { typeCheckItem = parseItem decl }
+  declarations <-
+    readStructDeclarationList $ updateTCItem item decl
   let identifiers = filter (/= Nothing) $ map (\(_, i, _) -> i) declarations
   let name =
         case parseItem identifierOpt of
@@ -352,7 +374,7 @@ readStructDeclarator ::
      TypeReader CStructDeclarator (CType, Maybe String, Maybe Int)
 readStructDeclarator
      item@(TypeCheckItem { typeCheckItem = (CStructDeclarator decl) }) = do
-  (identifier, t) <- readDeclarator $ item { typeCheckItem = parseItem decl }
+  (identifier, t) <- readDeclarator $ updateTCItem item decl
   return (t, Just identifier, Nothing)
 readStructDeclarator
      item@(TypeCheckItem { typeCheckItem = (CStructDeclaratorField declOpt _) }) =
@@ -361,7 +383,8 @@ readStructDeclarator
       -- TODO: handle bit fields properly
       Right (previousType item, Nothing, Nothing)
     CDeclaratorOptional decl -> do
-      (identifier, t) <- readDeclarator $ item { typeCheckItem = parseItem decl }
+      (identifier, t) <-
+        readDeclarator $ updateTCItem item decl
       return (t, Just identifier, Nothing)
 
 readStructDeclaratorList' ::
@@ -371,8 +394,8 @@ readStructDeclaratorList' (TypeCheckItem { typeCheckItem = CStructDeclaratorList
 readStructDeclaratorList'
      item@(TypeCheckItem
             { typeCheckItem = (CStructDeclaratorList' decl list) }) = do
-  d <- readStructDeclarator $ item { typeCheckItem = parseItem decl }
-  listTail <- readStructDeclaratorList' $ item { typeCheckItem = parseItem list }
+  d <- readStructDeclarator $ updateTCItem item decl
+  listTail <- readStructDeclaratorList' $ updateTCItem item list
   return $ d : listTail
 
 readStructDeclaratorList ::
@@ -380,8 +403,8 @@ readStructDeclaratorList ::
 readStructDeclaratorList
      item@(TypeCheckItem
             { typeCheckItem = (CStructDeclaratorList decl list) }) = do
-  d <- readStructDeclarator $ item { typeCheckItem = parseItem decl }
-  listTail <- readStructDeclaratorList' $ item { typeCheckItem = parseItem list }
+  d <- readStructDeclarator $ updateTCItem item decl
+  listTail <- readStructDeclaratorList' $ updateTCItem item list
   return $ d : listTail
 
 readStructDeclaration ::
@@ -390,7 +413,7 @@ readStructDeclaration
      item@(TypeCheckItem
             { typeCheckItem = CStructDeclaration specList declList }) = do
   (typeSpecifiers, typeQualifiers) <-
-    readSpecifierQualifierList $ item { typeCheckItem = parseItem specList }
+    readSpecifierQualifierList $ updateTCItem item specList
   typeQualifiers' <-
     validateTypeQualifiers $ item { typeCheckItem = typeQualifiers }
   typeSpecifier' <-
@@ -401,8 +424,7 @@ readStructDeclaration
           , typeQualifier = typeQualifiers'
           , dataType = typeSpecifier'
           }
-  readStructDeclaratorList $ item { previousType = t
-                                  , typeCheckItem = parseItem declList }
+  readStructDeclaratorList $ updateTCItem (item { previousType = t }) declList
 
 readStructDeclarationList ::
      TypeReader CStructDeclarationList [(CType, Maybe String, Maybe Int)]
@@ -411,13 +433,13 @@ readStructDeclarationList
             { typeCheckItem = CStructDeclarationList decl list }) =
   case parseItem list of
     CStructDeclarationListOptional list' -> do
-      decl' <- readStructDeclaration $ item { typeCheckItem = parseItem decl }
-      declarations <- readStructDeclarationList $ item { typeCheckItem = parseItem list' }
+      decl' <- readStructDeclaration $ updateTCItem item decl
+      declarations <- readStructDeclarationList $ updateTCItem item list'
       return $ decl' ++ declarations
     CStructDeclarationListOptionalEmpty ->
-      readStructDeclaration $ item { typeCheckItem = parseItem decl }
+      readStructDeclaration $ updateTCItem item decl
 
-readTypedefName :: TypeReader CTypedefName CDataType
+readTypedefName :: TypeReader CTypedefName DataType
 readTypedefName
      (TypeCheckItem
        { typeCheckLoc = c
@@ -439,7 +461,7 @@ functionReturnType (TypeCheckItem { typeCheckItem = CDeclarationSpecifiersOption
 functionReturnType
      item@(TypeCheckItem
             { typeCheckItem = CDeclarationSpecifiersOptional spec }) = do
-  t <- readDeclarationSpecifiers $ item { typeCheckItem = parseItem spec }
+  t <- readDeclarationSpecifiers $ updateTCItem item spec
   _ <- validateFunctionStorageClasses $ item { typeCheckItem = storageClass t }
   return t
 
@@ -448,7 +470,7 @@ readParamTypeList :: TypeReader CParameterTypeList (Bool, [CType])
 readParamTypeList
      item@(TypeCheckItem
             { typeCheckItem = CParameterTypeList paramList varargs }) = do
-  params <- readParamList $ item { typeCheckItem = parseItem paramList }
+  params <- readParamList $ updateTCItem item paramList
   let varargs' = parseItem varargs == CVarArgsOptionalEmpty
   return (varargs', map snd params)
 
@@ -459,27 +481,20 @@ readParamDeclaration
             }) =
   case parseItem paramDecl of
     CParameterDeclaration' decl -> do
-      t <- readDeclarationSpecifiers $ item { typeCheckLoc = parseLoc specifiers
-                                            , typeCheckItem = parseItem specifiers
-                                            }
-      (identifier, t') <- readDeclarator $ item { previousType = t
-                                                , typeCheckItem = parseItem decl
-                                                }
+      t <- readDeclarationSpecifiers $ updateTCItem item specifiers
+      (identifier, t') <- readDeclarator $
+        updateTCItem (item { previousType = t }) decl
       return (Just identifier, t')
     CParameterDeclaration'Abstract abstractDeclOpt ->
       case parseItem abstractDeclOpt of
         CAbstractDeclaratorOptionalEmpty -> do
-          t <- readDeclarationSpecifiers $ item { typeCheckLoc = parseLoc specifiers
-                                                , typeCheckItem = parseItem specifiers
-                                                }
+          t <- readDeclarationSpecifiers $ updateTCItem item specifiers
           return (Nothing, t)
         CAbstractDeclaratorOptional abstractDecl -> do
-          t <- readDeclarationSpecifiers $ item { typeCheckLoc = parseLoc specifiers
-                                                , typeCheckItem = parseItem specifiers
-                                                }
-          t' <- readAbstractDeclarator $ item { previousType = t
-                                              , typeCheckItem = parseItem abstractDecl
-                                              }
+          t <- readDeclarationSpecifiers $ updateTCItem item specifiers
+          t' <-
+            readAbstractDeclarator $
+              updateTCItem (item { previousType = t }) abstractDecl
           return (Nothing, t')
 
 readParamList' :: TypeReader CParameterList' [((Maybe String), CType)]
@@ -487,22 +502,22 @@ readParamList' (TypeCheckItem { typeCheckItem = CParameterList'Empty }) =
   Right []
 readParamList'
      item@(TypeCheckItem { typeCheckItem = CParameterList' decl list }) = do
-  t <- readParamDeclaration $ item { typeCheckItem = parseItem decl }
-  listTail <- readParamList' $ item { typeCheckItem = parseItem list }
+  t <- readParamDeclaration $ updateTCItem item decl
+  listTail <- readParamList' $ updateTCItem item list
   return $ t : listTail
 
 readParamList :: TypeReader CParameterList [((Maybe String), CType)]
 readParamList
      item@(TypeCheckItem { typeCheckItem = CParameterList decl list }) = do
-  t <- readParamDeclaration $ item { typeCheckItem = parseItem decl }
-  listTail <- readParamList' $ item { typeCheckItem = parseItem list }
+  t <- readParamDeclaration $ updateTCItem item decl
+  listTail <- readParamList' $ updateTCItem item list
   return $ t : listTail
 
 -- (varargs?, [(param name, param type)])
 readParamTypes :: TypeReader CParameterTypeList (Bool, [((Maybe String), CType)])
 readParamTypes
      item@(TypeCheckItem { typeCheckItem = CParameterTypeList list varargs }) = do
-  paramList <- readParamList $ item { typeCheckItem = parseItem list }
+  paramList <- readParamList $ updateTCItem item list
   return (parseItem varargs == CVarArgsOptionalEmpty, paramList)
 
 -- returns (function name, function type, param names)
@@ -523,35 +538,45 @@ readFunctionDeclaration
             }) =
   case parseItem directDeclarator of
     CDirectDeclaratorParen _ _ ->
-      Left $ TypeError c "Invalid function declaration"
+      Left $ TypeError c "1Invalid function declaration"
     CDirectDeclaratorId (ParseItem { parseItem = CIdentifier fName }) decl ->
       case parseItem decl of
         (CDirectDeclarator'ParamTypeList typeList decl') ->
           case parseItem decl' of
             CDirectDeclarator'Empty -> do
-              returnType <- readPointerOptional $ item { typeCheckItem = parseItem pointer }
-              (varargs, params) <- readParamTypes $ item { typeCheckItem = parseItem typeList }
+              returnType <- readPointerOptional $ updateTCItem item pointer
+              (varargs, params) <- readParamTypes $ updateTCItem item typeList
               let functionType =
-                    if varargs
-                      then CType
-                             { storageClass = []
-                             , typeQualifier = []
-                             , dataType =
-                                 TVarArgFunction returnType $ map snd params
-                             }
-                      else CType
-                             { storageClass = []
-                             , typeQualifier = []
-                             , dataType = TFunction returnType $ map snd params
-                             }
+                    CType
+                      { storageClass = []
+                      , typeQualifier = []
+                      , dataType =
+                          TFunction
+                            fName
+                            returnType
+                            (map snd params)
+                            varargs
+                      }
               case traverse fst params of
                 Nothing -> Left $ TypeError c "Unnamed function parameter(s)"
                 Just paramNames ->
                   if (length $ S.fromList paramNames) == length paramNames
                     then return (fName, functionType, paramNames)
                     else Left $ TypeError c "Conflicting parameter names"
-            _ -> Left $ TypeError c "Invalid function declaration"
-        _ -> Left $ TypeError c "Invalid function declaration"
+            _ -> Left $ TypeError c "2Invalid function declaration"
+        (CDirectDeclarator'IdList
+            (ParseItem { parseItem = CIdentifierListOptionalEmpty })
+            (ParseItem { parseItem = CDirectDeclarator'Empty })) -> do
+          returnType <- readPointerOptional $ updateTCItem item pointer
+          let functionType =
+                CType
+                  { storageClass = []
+                  , typeQualifier = []
+                  , dataType = TFunction fName returnType [] False
+                  }
+          return (fName, functionType, [])
+        _ -> Left $ TypeError c "3Invalid function declaration"
+
 -- old style
 readFunctionDeclaration
      item@(TypeCheckItem
@@ -565,18 +590,18 @@ readFunctionDeclaration
             }) =
   case parseItem directDeclarator of
     CDirectDeclaratorParen _ _ ->
-      Left $ TypeError c "Invalid function declaration"
+      Left $ TypeError c "3Invalid function declaration"
     CDirectDeclaratorId (ParseItem { parseItem = CIdentifier fName }) decl ->
       case parseItem decl of
         (CDirectDeclarator'IdList idList decl') ->
           case parseItem decl' of
             CDirectDeclarator'Empty -> do
-              params <- readDeclarationList $ item { typeCheckItem = parseItem declList }
-              returnType <- readPointerOptional $ item { typeCheckItem = parseItem pointer }
+              params <- readDeclarationList $ updateTCItem item declList
+              returnType <- readPointerOptional $ updateTCItem item pointer
               paramNames <- case parseItem idList of
                               CIdentifierListOptionalEmpty -> return []
                               CIdentifierListOptional idList' ->
-                                readIdentifierList $ item { typeCheckItem = parseItem idList' }
+                                readIdentifierList $ updateTCItem item idList'
               let paramTypeLookup =
                     M.fromList $ map (\(_, k, v) -> (k, v)) params
               let paramTypes = map (\k -> M.lookup k paramTypeLookup) paramNames
@@ -592,12 +617,17 @@ readFunctionDeclaration
                            , CType
                                { storageClass = []
                                , typeQualifier = []
-                               , dataType = TFunction returnType paramTypes'
+                               , dataType =
+                                   TFunction
+                                     fName
+                                     returnType
+                                     paramTypes'
+                                     False
                                }
                            , paramNames)
                     else Left $ TypeError c "Invalid parameter declaration"
-            _ -> Left $ TypeError c "Invalid function declaration"
-        _ -> Left $ TypeError c "Invalid function declaration"
+            _ -> Left $ TypeError c "4Invalid function declaration"
+        _ -> Left $ TypeError c "5Invalid function declaration"
 
 readFunctionDefinition :: TypeReader CFunctionDefinition (String, CType, [String])
 readFunctionDefinition
@@ -610,9 +640,7 @@ readFunctionDefinition
       Left $ TypeError (parseLoc specifiersOpt) "Function return type not specified"
     CDeclarationSpecifiersOptional specifiers -> do
       returnType <-
-        readDeclarationSpecifiers $ item { typeCheckLoc = parseLoc specifiers
-                                         , typeCheckItem = parseItem specifiers
-                                         }
+        readDeclarationSpecifiers $ updateTCItem item specifiers
       readFunctionDeclaration $ item { previousType = returnType }
 
 ------------------
@@ -623,7 +651,7 @@ readFunctionDefinition
 readInitDeclarator :: TypeReader CInitDeclarator (Bool, String, CType)
 readInitDeclarator
      item@(TypeCheckItem { typeCheckItem = CInitDeclarator decl initOpt }) = do
-  (identifier, t') <- readDeclarator $ item { typeCheckItem =  parseItem decl }
+  (identifier, t') <- readDeclarator $ updateTCItem item decl
   return (parseItem initOpt == CAssignInitializerOptionalEmpty, identifier, t')
 
 readInitDeclaratorList' :: TypeReader CInitDeclaratorList' [(Bool, String, CType)]
@@ -631,21 +659,21 @@ readInitDeclaratorList' (TypeCheckItem { typeCheckItem = CInitDeclaratorList'Emp
   Right []
 readInitDeclaratorList'
      item@(TypeCheckItem { typeCheckItem = CInitDeclaratorList' decl list }) = do
-  d <- readInitDeclarator $ item { typeCheckItem = parseItem decl }
-  listTail <- readInitDeclaratorList' $ item { typeCheckItem = parseItem list }
+  d <- readInitDeclarator $ updateTCItem item decl
+  listTail <- readInitDeclaratorList' $ updateTCItem item list
   return $ d : listTail
 
 readInitDeclaratorList :: TypeReader CInitDeclaratorList [(Bool, String, CType)]
 readInitDeclaratorList
      item@(TypeCheckItem { typeCheckItem = (CInitDeclaratorList decl list) }) = do
-  d <- readInitDeclarator $ item { typeCheckItem = parseItem decl }
-  listTail <- readInitDeclaratorList' $ item { typeCheckItem = parseItem list }
+  d <- readInitDeclarator $ updateTCItem item decl
+  listTail <- readInitDeclaratorList' $ updateTCItem item list
   return $ d : listTail
 
 isTypeDef :: TypeReader CDeclarationSpecifiers Bool
 isTypeDef item = do
   (storageClasses, _, _) <- readDeclarationSpecifierList item
-  return $ CStorageClassSpecifierTypedef `elem` storageClasses
+  return $ SCTypedef `elem` storageClasses
 
 -- (typedef?, [(assigned?, label, type)]
 readDeclaration :: TypeReader CDeclaration (Bool, [(Bool, String, CType)])
@@ -653,26 +681,21 @@ readDeclaration
      item@(TypeCheckItem { typeCheckItem = CDeclaration spec initDeclarators
                          , typeCheckLoc = l
                          }) = do
-  td <- isTypeDef $ item { typeCheckItem = parseItem spec }
+  td <- isTypeDef $ updateTCItem item spec
   if td
     then
       case parseItem initDeclarators of
         CInitDeclaratorListOptionalEmpty -> do
           (typedefLabels, t) <-
-            readDeclarationSpecifiersTypedef $
-              item { typeCheckLoc = parseLoc spec
-                   , typeCheckItem = parseItem spec }
-          return ( True
-                 , (map (\label -> (False, label, t)) typedefLabels)
-                 )
-        CInitDeclaratorListOptional list -> do
+            readDeclarationSpecifiersTypedef $ updateTCItem item spec
+          let variables = map (\label -> (False, label, t)) typedefLabels
+          return (True, variables)
+        (CInitDeclaratorListOptional list) -> do
           (typedefLabels, t) <-
-            readDeclarationSpecifiersTypedef $
-              item { typeCheckLoc = parseLoc spec
-                   , typeCheckItem = parseItem spec }
-          d <- readInitDeclaratorList $ item { previousType = t
-                                             , typeCheckItem =  parseItem list
-                                             }
+            readDeclarationSpecifiersTypedef $ updateTCItem item spec
+          d <-
+            readInitDeclaratorList $
+              updateTCItem (item { previousType = t }) list
           if all (\(a, _, _) -> not a) d
             then
               return
@@ -683,15 +706,17 @@ readDeclaration
               Left $ TypeError l "Value assigned to typedef declaration"
     else
       case parseItem initDeclarators of
-        CInitDeclaratorListOptionalEmpty ->
-          Left $ TypeError l "No identifier specified"
+        CInitDeclaratorListOptionalEmpty -> do
+          t <- readDeclarationSpecifiers $ updateTCItem item spec
+          case dataType t of
+            TUnion (Just label) _ -> return (False, [(False, label, t)])
+            TStruct (Just label) _ -> return (False, [(False, label, t)])
+            TEnum (Just label) _ -> return (False, [(False, label, t)])
+            TFunction label _ _ _ -> return (False, [(False, label, t)])
+            _ -> Left $ TypeError (parseLoc initDeclarators) "No identifier specified"
         CInitDeclaratorListOptional list -> do
-          t <- readDeclarationSpecifiers $ item { typeCheckLoc = parseLoc initDeclarators
-                                                , typeCheckItem = parseItem spec
-                                                }
-          d <- readInitDeclaratorList $ item { previousType = t
-                                             , typeCheckItem =  parseItem list
-                                             }
+          t <- readDeclarationSpecifiers $ updateTCItem item spec
+          d <- readInitDeclaratorList $ updateTCItem (item { previousType = t }) list
           return (False, d)
 
 readDeclarationList :: TypeReader CDeclarationList [(Bool, String, CType)]
@@ -699,13 +724,13 @@ readDeclarationList
      item@(TypeCheckItem { typeCheckItem = CDeclarationList decl listOpt }) =
   case parseItem listOpt of
     CDeclarationListOptionalEmpty -> do
-      d <- readDeclaration $ item { typeCheckItem = parseItem decl }
+      d <- readDeclaration $ updateTCItem item decl
       if fst d
         then Left $ TypeError (typeCheckLoc item) "Typedef declaration inside a declaration list"
         else return $ snd d
     CDeclarationListOptional list -> do
-      listHead <- readDeclaration $ item { typeCheckItem = parseItem decl }
-      listTail <- readDeclarationList $ item { typeCheckItem = parseItem list }
+      listHead <- readDeclaration $ updateTCItem item decl
+      listTail <- readDeclarationList $ updateTCItem item list
       if fst listHead
         then Left $ TypeError (typeCheckLoc item) "Typedef declaration inside a declaration list"
         else return $ (snd listHead) ++ listTail
@@ -714,51 +739,48 @@ readDeclarationList
 -- DECLARATORS --
 -----------------
 
-readDirectDeclarator' :: TypeReader CDirectDeclarator' CType
-readDirectDeclarator' item@(TypeCheckItem { typeCheckItem = CDirectDeclarator'Empty }) =
+readDirectDeclarator' :: String -> TypeReader CDirectDeclarator' CType
+readDirectDeclarator' _ item@(TypeCheckItem { typeCheckItem = CDirectDeclarator'Empty }) =
   Right $ previousType item
 readDirectDeclarator'
+     label
      item@(TypeCheckItem
             { previousType = t
             , typeCheckItem = CDirectDeclarator'ConstExpr _ directDecl'
             }) =
-  readDirectDeclarator' $ item { previousType = t'
-                               , typeCheckItem =  parseItem directDecl'
-                               }
+  readDirectDeclarator' label $ updateTCItem (item { previousType = t' }) directDecl'
   where
     t' = CType { storageClass = []
                , typeQualifier = []
                , dataType = TArray t Nothing
                }
 readDirectDeclarator'
+     fName
      item@(TypeCheckItem
             { previousType = t
             , typeCheckItem =
                 CDirectDeclarator'ParamTypeList typeList directDecl'
             }) = do
-  (varArgs, types) <- readParamTypeList $ item { typeCheckItem = parseItem typeList }
+  (varArgs, types) <-
+    readParamTypeList $ updateTCItem item typeList
   let t' = CType { storageClass = []
                  , typeQualifier = []
-                 , dataType = if varArgs
-                                then TVarArgFunction t types
-                                else TFunction t types
+                 , dataType = TFunction fName t types varArgs
                  }
-  readDirectDeclarator' $ item { previousType = t'
-                               , typeCheckItem = parseItem directDecl'
-                               }
+  readDirectDeclarator' fName $ updateTCItem (item { previousType = t' }) directDecl'
 readDirectDeclarator'
+     fName
      item@(TypeCheckItem
             { previousType = t
             , typeCheckItem = CDirectDeclarator'IdList idList directDecl'
             }) =
   case parseItem idList of
     CIdentifierListOptionalEmpty ->
-      readDirectDeclarator' $ item { previousType = t'
-                                   , typeCheckItem = parseItem directDecl'
-                                   }
+      readDirectDeclarator' fName $
+        updateTCItem (item { previousType = t' }) directDecl'
       where t' = CType { storageClass = []
                        , typeQualifier = []
-                       , dataType = TVarArgFunction t []
+                       , dataType = TFunction fName t [] True
                        }
     _ -> Left $ TypeError (parseLoc idList) "No parameter types given in function declaration"
 
@@ -770,16 +792,16 @@ readDirectDeclarator
                  (ParseItem { parseItem = CIdentifier identifier })
                  directDecl')
             }) = do
-  t' <- readDirectDeclarator' $ item { typeCheckItem = parseItem directDecl' }
+  t' <- readDirectDeclarator' identifier $ updateTCItem item directDecl'
   return (identifier, t')
 readDirectDeclarator
      item@(TypeCheckItem
             { typeCheckItem = CDirectDeclaratorParen decl directDecl'
             }) = do
-  (identifier, t') <- readDeclarator $ item { typeCheckItem = parseItem decl }
-  t'' <- readDirectDeclarator' $ item { previousType = t'
-                                      , typeCheckItem = parseItem directDecl'
-                                      }
+  (identifier, t') <- readDeclarator $ updateTCItem item decl
+  t'' <-
+    readDirectDeclarator' identifier $
+      updateTCItem (item { previousType = t' }) directDecl'
   return (identifier, t'')
 
 readDeclarator :: TypeReader CDeclarator (String, CType)
@@ -787,8 +809,8 @@ readDeclarator
      item@(TypeCheckItem
             { typeCheckItem = CDeclarator pointer directDecl
             }) = do
-  t' <- readPointerOptional $ item { typeCheckItem = parseItem pointer }
-  readDirectDeclarator $ item { previousType = t', typeCheckItem = parseItem directDecl }
+  t' <- readPointerOptional $ updateTCItem item pointer
+  readDirectDeclarator $ updateTCItem (item { previousType = t' }) directDecl
 
 readDirectAbstractDeclarator' :: TypeReader CDirectAbstractDeclarator' CType
 readDirectAbstractDeclarator'
@@ -801,9 +823,8 @@ readDirectAbstractDeclarator'
             { previousType = t
             , typeCheckItem = CDirectAbstractDeclarator'Const _ decl
             }) =
-  readDirectAbstractDeclarator' $ item { previousType = t'
-                                       , typeCheckItem = parseItem decl
-                                       }
+  readDirectAbstractDeclarator' $
+    updateTCItem (item { previousType = t' }) decl
   where t' = CType { storageClass = []
                    , typeQualifier = []
                    , dataType = TArray t Nothing
@@ -819,7 +840,8 @@ readDirectAbstractDeclarator
             { previousType = t
             , typeCheckItem = CDirectAbstractDeclaratorIndexed _ decl
             }) =
-  readDirectAbstractDeclarator' $ item { previousType = t', typeCheckItem = parseItem decl }
+  readDirectAbstractDeclarator' $
+    updateTCItem (item { previousType = t' }) decl
   where t' = CType { storageClass = []
                    , typeQualifier = []
                    , dataType = TArray t Nothing
@@ -838,13 +860,14 @@ readAbstractDeclarator
      item@(TypeCheckItem
             { typeCheckItem = CAbstractDeclaratorPointer pointer
             }) =
-  readPointer $ item { typeCheckItem = parseItem pointer }
+  readPointer $ updateTCItem item pointer
 readAbstractDeclarator
     item@(TypeCheckItem
             { typeCheckItem = CAbstractDeclaratorDirect pointerOpt directDecl
             }) = do
-  t' <- readPointerOptional $ item { typeCheckItem = parseItem pointerOpt }
-  readDirectAbstractDeclarator $ item { previousType = t', typeCheckItem = parseItem directDecl }
+  t' <- readPointerOptional $ updateTCItem item pointerOpt
+  readDirectAbstractDeclarator $
+    updateTCItem (item { previousType = t' }) directDecl
 
 -------------
 -- HELPERS --
@@ -856,15 +879,23 @@ readPointer
             { previousType = t
             , typeCheckItem = CPointer qualifierList pointerOpt
             }) = do
-  qualifiers <- readTypeQualifiers $ item { typeCheckItem = parseItem qualifierList }
-  let t' = CType {storageClass = [], typeQualifier = qualifiers, dataType = TPointer t}
-  readPointerOptional $ item { previousType = t', typeCheckItem = parseItem pointerOpt }
+  qualifiers <-
+    readTypeQualifiers $ updateTCItem item qualifierList
+  let t' = CType { storageClass = []
+                 , typeQualifier = qualifiers
+                 , dataType = TPointer t
+                 }
+  readPointerOptional $ item { previousType = t'
+                             , typeCheckItem = parseItem pointerOpt
+                             }
 
 readPointerOptional :: TypeReader CPointerOptional CType
-readPointerOptional (TypeCheckItem { previousType = t, typeCheckItem = CPointerOptionalEmpty }) =
+readPointerOptional
+     (TypeCheckItem { previousType = t
+                    , typeCheckItem = CPointerOptionalEmpty }) =
   Right t
 readPointerOptional item@(TypeCheckItem { typeCheckItem = (CPointerOptional pointer) }) =
-  readPointer $ item { typeCheckItem = parseItem pointer }
+  readPointer $ updateTCItem item pointer
 
 readIdentifierList' :: TypeReader CIdentifierList' [String]
 readIdentifierList' (TypeCheckItem { typeCheckItem = CIdentifierList'Empty }) =
@@ -876,7 +907,7 @@ readIdentifierList'
                   (ParseItem { parseItem = CIdentifier identifier})
                   idList')
             }) = do
-  listTail <- readIdentifierList' $ item { typeCheckItem = parseItem idList' }
+  listTail <- readIdentifierList' $ updateTCItem item idList'
   return $ identifier : listTail
 
 readIdentifierList :: TypeReader CIdentifierList [String]
@@ -887,6 +918,6 @@ readIdentifierList
                   (ParseItem { parseItem = (CIdentifier identifier) })
                   idList')
             }) = do
-  listTail <- readIdentifierList' $ item { typeCheckItem = parseItem idList' }
+  listTail <- readIdentifierList' $ updateTCItem item idList'
   return $ identifier : listTail
 

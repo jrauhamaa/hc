@@ -3,16 +3,25 @@ module TypeCheck where
 import Control.Monad
 import qualified Data.Map as M
 
-import Scanner (Coordinates)
 import ParseItem
-import Symbols ( TypeError(..)
-               , TypeCheckItem(..)
+import Utils ( Error(..)
+             , Coordinates
+             , DataType(..)
+             , SymbolTable(..)
+             , CType(..)
+             )
+import Symbols ( TypeCheckItem(..)
                , readFunctionDefinition
                , readDeclaration
                )
 
 type TypeAnnotate a
-  = ParseItem a -> SymbolTable -> Either TypeError (ParseItem a)
+  = ParseItem a -> SymbolTable -> Either Error (ParseItem a)
+
+typeCheck ::
+     ParseItem CTranslationUnit
+  -> Either Error (ParseItem CTranslationUnit)
+typeCheck item = tTranslationUnit item initialSymbols
 
 emptyType :: CType
 emptyType =
@@ -28,6 +37,7 @@ childSymbols sym =
     { typedef = M.empty
     , labels = M.empty
     , symbols = M.empty
+    , structured = M.empty
     , parent = Just sym
     }
 
@@ -36,7 +46,7 @@ addSymbol ::
   -> CType
   -> SymbolTable
   -> Coordinates
-  -> Either TypeError SymbolTable
+  -> Either Error SymbolTable
 addSymbol label t sym@(SymbolTable { symbols = symTable }) c =
   case M.lookup label symTable of
     Nothing -> return $ sym { symbols = M.insert label t symTable }
@@ -46,7 +56,7 @@ addLabel ::
      String
   -> Coordinates
   -> SymbolTable
-  -> Either TypeError SymbolTable
+  -> Either Error SymbolTable
 addLabel label c sym@(SymbolTable { labels = labelTable }) =
   case M.lookup label labelTable of
     Nothing -> return $ sym { labels = M.insert label c labelTable }
@@ -123,9 +133,10 @@ tFunctionDefinition
                 { typedef = M.empty
                 , labels  = M.empty
                 , symbols = M.fromList $ zip argNames argTypes
+                , structured = M.empty
                 , parent  = Just sym'
                 }
-              where (TFunction _ argTypes) = dataType fType
+              where (TFunction _ _ argTypes _) = dataType fType
   compStatement' <- tCompoundStatement compStatement sym''
   return $
     ParseItem

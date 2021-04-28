@@ -5,7 +5,7 @@ struct student
 };
 int main(){
     struct student stud1[5], stud2[5];
-    FILE *fptr;
+    // FILE *fptr;
     int i;
 
     fptr = fopen("file.txt","wb");
@@ -29,4 +29,3 @@ int main(){
     }
     fclose(fptr);
 }
-

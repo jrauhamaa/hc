@@ -11,7 +11,8 @@ import Control.Applicative
 
 import Lexeme (CLexeme(..))
 import ParseItem
-import Scanner (Coordinates, ScanItem(..))
+import Utils (Coordinates, Error(..), errorLoc)
+import Scanner (ScanItem(..))
 
 -----------
 -- TYPES --
@@ -20,14 +21,10 @@ type Input = [ScanItem CLexeme]
 
 newtype Parser a =
   Parser
-    { runParser :: Input -> Either ParseError (Input, Input, a)
+    { runParser :: Input -> Either Error (Input, Input, a)
     }
 
 type PIParser a = Parser (ParseItem a)
-
-data ParseError =
-  ParseError Coordinates String
-  deriving (Eq, Show)
 
 instance Functor Parser where
   fmap fab pa = Parser $ (fmap . fmap) fab . runParser pa
@@ -45,20 +42,21 @@ instance Alternative Parser where
   p1 <|> p2 = Parser $ \input ->
     case runParser p1 input of
       r@(Right _) -> r
-      e1@(Left (ParseError c1 _)) ->
+      Left e1 ->
         case runParser p2 input of
           r@(Right _) -> r
-          e2@(Left (ParseError c2 _)) ->
-            if c1 >= c2 then e1 else e2
+          Left e2 ->
+            if (errorLoc e1) >= (errorLoc e2)
+              then Left e1
+              else Left e2
 
-parseCCode :: Input -> Either ParseError (ParseItem CTranslationUnit)
+parseCCode :: Input -> Either Error (ParseItem CTranslationUnit)
 parseCCode input = do
   (_, _, result) <- runParser cParser input
   return result
 
 cParser :: PIParser CTranslationUnit
-cParser =
-  cTranslationUnitP <* singleP LEndMarker
+cParser = cTranslationUnitP <* singleP LEndMarker
 
 -----------
 -- UTILS --
@@ -72,10 +70,10 @@ parserToPIParser p =
       (parsed, notParsed, a) <- runParser p input
       return (parsed, notParsed, ParseItem c a initialSymbols)
 
-unexpectedEof :: ParseError
+unexpectedEof :: Error
 unexpectedEof = ParseError (0, 0) "Unexpected EOF"
 
-unexpectedLexeme :: Coordinates -> String -> String -> ParseError
+unexpectedLexeme :: Coordinates -> String -> String -> Error
 unexpectedLexeme c expected encountered =
   ParseError c $
   mconcat ["Expected ", expected, ". Instead encountered ", encountered, "."]
@@ -85,8 +83,7 @@ unexpectedLexeme c expected encountered =
 ------------------------
 
 failingP :: Parser a
-failingP =
-  Parser $ \_ -> Left $ ParseError (0, 0) "Error"
+failingP = Parser $ \_ -> Left $ ParseError (0, 0) "Error"
 
 singleP :: CLexeme -> Parser CLexeme
 singleP l =
@@ -153,10 +150,23 @@ braceP p = singleP LBraceOpen *> p <* singleP LBraceClose
 afterP :: PIParser a -> PIParser b -> PIParser a
 afterP before after =
   Parser $ \input ->
-    let parsers = map splitParser [length input, length input - 1 .. 0]
-        p = foldl (<|>) failingP parsers
+    let parsers = map splitParser [0 .. (length input)]
+        p = foldl reduce failingP parsers
      in runParser p input
   where
+    reduce acc p =
+      Parser $ \input ->
+        case runParser acc input of
+          Left _ -> runParser p input
+          resultAcc@(Right (_, remainingAcc, _)) ->
+            case runParser p input of
+              Left _ -> resultAcc
+              resultP@(Right (_, remainingP, _)) -> do
+                (_, remainingAccAfter, _) <- runParser after remainingAcc
+                (_, remainingPAfter, _) <- runParser after remainingP
+                if (length remainingAccAfter) <= (length remainingPAfter)
+                  then resultAcc
+                  else resultP
     splitParser n =
       Parser $ \input ->
         let (begin, end) = splitAt n input
@@ -738,7 +748,7 @@ cCompoundStatementP =
   parserToPIParser $
   liftA2
     CCompoundStatement
-    cDeclarationListOptionalP
+    (afterP cDeclarationListOptionalP cStatementListOptionalP)
     cStatementListOptionalP
 
 cStatementListP :: PIParser CStatementList

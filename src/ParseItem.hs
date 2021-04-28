@@ -2,7 +2,7 @@ module ParseItem where
 
 import qualified Data.Map as M
 
-import Scanner (Coordinates)
+import Utils (Coordinates, SymbolTable(..))
 
 data ParseItem a =
   ParseItem
@@ -41,51 +41,13 @@ instance Applicative ParseItem where
 
 type PI = ParseItem
 
-data CDataType
-  = TChar
-  | TShort          -- int or short int
-  | TLong
-  | TLongLong
-  | TUChar
-  | TUShort         -- unsigned int or unsigned short
-  | TULong
-  | TULongLong
-  | TFloat
-  | TDouble
-  | TLongDouble
-  | TPointer CType
-  | TArray CType (Maybe Int)
-  | TUnion (Maybe String) (M.Map String CType)
-  | TStruct (Maybe String) [(CType, Maybe String, Maybe Int)]
-  | TFunction CType [CType]
-  | TVarArgFunction CType [CType]
-  | TEnum (Maybe String) (M.Map String Int)
-  | TVoid
-  deriving (Show, Eq)
-
-data CType =
-  CType
-    { storageClass  :: [CStorageClassSpecifier]
-    , typeQualifier :: [CTypeQualifier]
-    , dataType      :: CDataType
-    }
-  deriving (Show, Eq)
-
-data SymbolTable =
-  SymbolTable
-    { typedef :: M.Map String CType
-    , labels  :: M.Map String Coordinates
-    , symbols :: M.Map String CType
-    , parent  :: Maybe SymbolTable
-    }
-  deriving (Show, Eq)
-
 initialSymbols :: SymbolTable
 initialSymbols =
   SymbolTable
     { typedef = M.empty
     , labels  = M.empty
     , symbols = M.empty
+    , structured = M.empty
     , parent  = Nothing
     }
 
