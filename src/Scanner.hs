@@ -64,6 +64,18 @@ instance Alternative Scanner where
 ------------------
 -- MAIN SCANNER --
 ------------------
+
+scanCLine :: Coordinates -> String -> Either Error [ScanItem CLexeme]
+scanCLine c input =
+  case runScanner cScanner (c, input) of
+    Left e -> Left e
+    Right ((c', input'), se) ->
+      if input' == ""
+        then return [se]
+        else do
+          lineTail <- scanCLine c' input'
+          return $ se : lineTail
+
 scanCCode :: String -> Either Error [ScanItem CLexeme]
 scanCCode input = scanCCode' [] ((1, 1), input)
 
@@ -92,8 +104,22 @@ filterWhiteSpace (item@(ScanItem c s a):item'@(ScanItem _ s' _):rest)
 
 cScanner :: Scanner CLexeme
 cScanner
+  =   lPPDefine
+  <|> lPPUndef
+  <|> lPPInclude
+  <|> lPPIf
+  <|> lPPIfdef
+  <|> lPPIfndef
+  <|> lPPElif
+  <|> lPPElse
+  <|> lPPEndif
+  <|> lPPLine
+  <|> lPPError
+  <|> lPPPragma
+  <|> lPPConcat
+  <|> lPPEmpty
   -- begins with /
-  =   lCommentS
+  <|> lCommentS
   <|> lDivisionAssignS
   <|> lDivisionS
   -- begins with do
@@ -308,6 +334,57 @@ escapeCharHex =
 
 escapeS :: Scanner Char
 escapeS = escapeChar <|> escapeCharOctal <|> escapeCharHex
+
+------------------
+-- PREPROCESSOR --
+------------------
+
+ppS :: String -> Scanner ()
+ppS s = () <$ (charS '#')
+           <* (spanS (`elem` whiteSpace))
+           <* (stringS s)
+
+lPPDefine :: Scanner CLexeme
+lPPDefine = LPPDefine <$ ppS "define"
+
+lPPUndef :: Scanner CLexeme
+lPPUndef = LPPUndef <$ ppS "undef"
+
+lPPInclude :: Scanner CLexeme
+lPPInclude = LPPInclude <$ ppS "include"
+
+lPPIf :: Scanner CLexeme
+lPPIf = LPPIf <$ ppS "if"
+
+lPPIfdef :: Scanner CLexeme
+lPPIfdef = LPPIfdef <$ ppS "ifdef"
+
+lPPIfndef :: Scanner CLexeme
+lPPIfndef = LPPIfndef <$ ppS "ifndef"
+
+lPPElif :: Scanner CLexeme
+lPPElif = LPPElif <$ ppS "elif"
+
+lPPElse :: Scanner CLexeme
+lPPElse = LPPElse <$ ppS "else"
+
+lPPEndif :: Scanner CLexeme
+lPPEndif = LPPEndif <$ ppS "endif"
+
+lPPLine :: Scanner CLexeme
+lPPLine = LPPLine <$ ppS "line"
+
+lPPError :: Scanner CLexeme
+lPPError = LPPError <$ ppS "error"
+
+lPPPragma :: Scanner CLexeme
+lPPPragma = LPPPragma <$ ppS "pragma"
+
+lPPConcat :: Scanner CLexeme
+lPPConcat = LPPConcat <$ stringS "##"
+
+lPPEmpty :: Scanner CLexeme
+lPPEmpty = LPPEmpty <$ charS '#'
 
 ----------------------
 -- KEYWORD SCANNERS --

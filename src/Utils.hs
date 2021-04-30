@@ -62,6 +62,7 @@ data Error
   | SyntaxError Coordinates String
   | TypeError Coordinates String
   | InternalError Coordinates String
+  | PreProcessError Coordinates String
   deriving (Show)
 
 errorLoc :: Error -> Coordinates
@@ -70,6 +71,7 @@ errorLoc (ParseError c _) = c
 errorLoc (SyntaxError c _) = c
 errorLoc (TypeError c _) = c
 errorLoc (InternalError c _) = c
+errorLoc (PreProcessError c _) = c
 
 errorMsg :: Error -> String
 errorMsg (ScanError _ s) = s
@@ -77,6 +79,7 @@ errorMsg (ParseError _ s) = s
 errorMsg (SyntaxError _ s) = s
 errorMsg (TypeError _ s) = s
 errorMsg (InternalError _ s) = s
+errorMsg (PreProcessError _ s) = s
 
 instance Alternative (Either Error) where
   empty = Left $ InternalError (1, 1) "empty"

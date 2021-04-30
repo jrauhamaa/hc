@@ -1,8 +1,23 @@
 module Lexeme where
 
 data CLexeme
+  -- preprocessor
+  = LPPConcat   -- ##
+  | LPPDefine   -- #define
+  | LPPElif     -- #elif
+  | LPPElse     -- #else
+  | LPPEmpty    -- #
+  | LPPEndif    -- #endif
+  | LPPError    -- #error
+  | LPPIf       -- #if
+  | LPPIfdef    -- #ifdef
+  | LPPIfndef   -- #ifndef
+  | LPPInclude  -- #include
+  | LPPLine     -- #line
+  | LPPPragma   -- #pragma
+  | LPPUndef    -- #undef
   -- keywords
-  = LAuto
+  | LAuto
   | LBreak
   | LCase
   | LChar

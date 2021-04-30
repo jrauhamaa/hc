@@ -23,6 +23,7 @@ library
                      , Symbols
                      , TypeCheck
                      , Utils
+                     , PreProcess
   -- other-modules:
   -- other-extensions:
   build-depends:       base ^>=4.14.1.0
