@@ -49,6 +49,9 @@ test-suite tests
                      , src
   default-language:    Haskell2010
   other-modules:       TestScanner
+                     , TestParser
+                     , ParseItem
+                     , Parser
                      , Scanner
                      , Lexeme
                      , Utils

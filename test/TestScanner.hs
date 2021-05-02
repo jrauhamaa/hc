@@ -28,17 +28,21 @@ testFullSourceFile = do
             it "will scan a c source file" $ do
               scanCCode contents `shouldSatisfy` isRight
 
+            it "will produce ScanElements with correct scanStr" $ do
+              ((concat . map scanStr) <$> scanCCode contents)
+                `shouldBe` (Right contents)
+
 testGoodInput :: Spec
 testGoodInput =
   describe "scanCCode" $ do
     context "when given valid input" $ do
       it "will recognize c keywords" $ do
         let keywordInput = "do while for if else switch case"
-                           <> "default break return continue"
-                           <> "register extern typedef volatile"
-                           <> "void int float double char"
-                           <> "unsigned signed short long"
-                           <> "sizeof label"
+                           <> " default break return continue"
+                           <> " register extern typedef volatile"
+                           <> " void int float double char"
+                           <> " unsigned signed short long"
+                           <> " sizeof label"
             expectedResult = [ LDo, LWhile, LFor, LIf, LElse, LSwitch, LCase
                              , LDefault, LBreak, LReturn, LContinue
                              , LRegister, LExtern, LTypedef, LVolatile
@@ -53,11 +57,11 @@ testGoodInput =
       it "will recognize preprocessor directives" $ do
         let input = "#define #undef #error #include #line #pragma"
                     <> "#if #ifdef #ifndef #elif #else #endif"
-                    <> "# ##define"
+                    <> "# ##define ififif"
             expected = [ LPPDefine, LPPUndef, LPPError, LPPInclude, LPPLine
                        , LPPPragma, LPPIf, LPPIfdef, LPPIfndef, LPPElif
                        , LPPElse, LPPEndif, LPPEmpty, LPPConcat
-                       , LLabel "define", LEndMarker
+                       , LLabel "define", LLabel "ififif", LEndMarker
                        ]
             results = scanCCode input
         results `shouldSatisfy` isRight
@@ -81,7 +85,6 @@ testGoodInput =
       it "will recognize string literals" $ do
         ((map scanItem) <$> scanCLine (0, 0) "\"foo \\\\ \\n \\t \\\"\"")
          `shouldBe` (Right $ [LStringLiteral "foo \\ \n \t \""])
-
 
 testBadInput :: Spec
 testBadInput =

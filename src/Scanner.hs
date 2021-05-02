@@ -59,7 +59,17 @@ instance Applicative Scanner where
 
 instance Alternative Scanner where
   empty = Scanner $ const empty
-  Scanner s1 <|> Scanner s2 = Scanner $ \input -> s1 input <|> s2 input
+  Scanner s1 <|> Scanner s2 =
+    Scanner $ \input ->
+      case s1 input of
+        Left _ -> s2 input
+        scan1@(Right (_, item1)) ->
+          case s2 input of
+            Left _ -> scan1
+            scan2@(Right (_, item2)) ->
+              if scanStr item1 >= scanStr item2
+                then scan1
+                else scan2
 
 ------------------
 -- MAIN SCANNER --
