@@ -13,7 +13,7 @@ author:              Johannes Rauhamaa
 maintainer:          johannes.rauhamaa@iki.fi
 -- copyright:
 -- category:
-extra-source-files:  CHANGELOG.md
+-- extra-source-files:  CHANGELOG.md
 
 library
   exposed-modules:     Scanner
@@ -24,7 +24,7 @@ library
                      , TypeCheck
                      , Utils
                      , PreProcess
-  -- other-modules:
+  -- other-modules:       TestScanner
   -- other-extensions:
   build-depends:       base ^>=4.14.1.0
                      , containers
@@ -40,4 +40,19 @@ executable hc
                      , hc
   -- hs-source-dirs:
   default-language:    Haskell2010
+  ghc-options:         -Wall -fwarn-tabs
+
+test-suite tests
+  type:                exitcode-stdio-1.0
+  main-is:             Tests.hs
+  hs-source-dirs:      test
+                     , src
+  default-language:    Haskell2010
+  other-modules:       TestScanner
+                     , Scanner
+                     , Lexeme
+                     , Utils
+  build-depends:       base
+                     , hspec
+                     , containers
   ghc-options:         -Wall -fwarn-tabs

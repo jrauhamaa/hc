@@ -107,9 +107,9 @@ cScanner
   =   lPPDefine
   <|> lPPUndef
   <|> lPPInclude
-  <|> lPPIf
   <|> lPPIfdef
   <|> lPPIfndef
+  <|> lPPIf
   <|> lPPElif
   <|> lPPElse
   <|> lPPEndif
@@ -135,6 +135,9 @@ cScanner
   <|> lBitShiftRightS
   <|> lGTES
   <|> lGTS
+  -- begins with number
+  <|> lFloatLiteralS
+  <|> lIntLiteralS
   -- begins with -
   <|> lMinusAssignS
   <|> lDecrementS
@@ -155,9 +158,6 @@ cScanner
   <|> lOrS
   <|> lBitwiseOrAssignS
   <|> lBitwiseOrS
-  -- begins with number
-  <|> lIntLiteralS
-  <|> lFloatLiteralS
   -- begins with =
   <|> lEqualsS
   <|> lAssignS
@@ -242,6 +242,15 @@ nextLoc :: Char -> Coordinates -> Coordinates
 nextLoc '\n' l = (fst l + 1, 1)
 nextLoc _ l = (fst l, snd l + 1)
 
+charSIgnoreCase :: Char -> Scanner Char
+charSIgnoreCase c =
+  Scanner $ \case
+    (l, "") -> Left $ emptyInputError l
+    (l, c':rest) ->
+      if toLower c == toLower c'
+        then Right ((nextLoc c l, rest), ScanItem l (c:"") c)
+        else Left $ unexpectedInputError [c] [c'] l
+
 charS :: Char -> Scanner Char
 charS c =
   Scanner $ \case
@@ -250,6 +259,9 @@ charS c =
       if c == c'
         then Right ((nextLoc c l, rest), ScanItem l (c:"") c)
         else Left $ unexpectedInputError [c] [c'] l
+
+stringSIgnoreCase :: String -> Scanner String
+stringSIgnoreCase = traverse charSIgnoreCase
 
 stringS :: String -> Scanner String
 stringS = traverse charS
@@ -710,7 +722,7 @@ lIntLiteralHexS =
   (stringS "0x" *> spanOneOrMoreS (`elem` hexDigit))
 
 lIntLiteralS :: Scanner CLexeme
-lIntLiteralS = lIntLiteralDecimalS <|> lIntLiteralOctalS <|> lIntLiteralHexS
+lIntLiteralS = lIntLiteralHexS <|> lIntLiteralOctalS <|> lIntLiteralDecimalS
 
 ------------------
 -- CHAR LITERAL --
@@ -727,10 +739,11 @@ lCharLiteralS =
 -- FLOAT LITERAL --
 -------------------
 
-readFloatLiteral :: String -> String -> Double
-readFloatLiteral digits exponentPart = read (cleanDigits <> exponentPart)
+readFloatLiteral :: String -> String -> String -> Double
+readFloatLiteral s digits exponentPart = sign * (read $ cleanDigits <> exponentPart)
   where
-    zeroPadded = '0' : digits
+    zeroPadded = '0' : (dropWhile (== '+') digits)
+    sign = if s == "-" then -1 else 1
     cleanDigits =
       if last zeroPadded == '.'
         then zeroPadded <> "0"
@@ -749,7 +762,10 @@ fractionalConstantS' =
 
 fractionalConstantS'' :: Scanner String
 fractionalConstantS'' =
-  liftA2 (\s c -> s <> [c]) (spanOneOrMoreS (`elem` decimalDigit)) (charS '.')
+  liftA2
+    (\s c -> s <> [c])
+    (spanOneOrMoreS (`elem` decimalDigit))
+    (charS '.')
 
 fractionalConstantS :: Scanner String
 fractionalConstantS = fractionalConstantS' <|> fractionalConstantS''
@@ -762,21 +778,37 @@ exponentPartS =
     (optionalCharS $ scanIf (`elem` "+-"))
     (spanOneOrMoreS (`elem` decimalDigit))
 
+-- a number with decimal dot + optional exponent part
 lFloatLiteralS' :: Scanner CLexeme
 lFloatLiteralS' =
   LFloatLiteral <$>
-  liftA2
+  liftA3
      readFloatLiteral
+     (optionalCharS $ scanIf (`elem` "+-")  )
      fractionalConstantS
      (optionalStringS exponentPartS <* optionalCharS floatSuffixS)
 
+-- one or more digits + exponent part
 lFloatLiteralS'' :: Scanner CLexeme
 lFloatLiteralS'' =
   LFloatLiteral <$>
-  liftA2
-     readFloatLiteral
+  liftA3
+     (\sign digits e -> readFloatLiteral sign digits e)
+     (optionalCharS $ scanIf (`elem` "+-"))
      (spanOneOrMoreS (`elem` decimalDigit))
      (exponentPartS <* optionalCharS floatSuffixS)
 
+-- integer followed by f lf or fl
+lFloatLiteralS''' :: Scanner CLexeme
+lFloatLiteralS''' =
+  LFloatLiteral <$>
+  liftA2
+    (\sign digits -> readFloatLiteral sign digits "")
+    (optionalCharS $ scanIf (`elem` "+-"))
+    ((spanOneOrMoreS (`elem` decimalDigit))
+       <* (stringSIgnoreCase "fl"
+           <|> stringSIgnoreCase "f"
+           <|> stringSIgnoreCase "lf"))
+
 lFloatLiteralS :: Scanner CLexeme
-lFloatLiteralS = lFloatLiteralS' <|> lFloatLiteralS''
+lFloatLiteralS = lFloatLiteralS' <|> lFloatLiteralS'' <|> lFloatLiteralS'''

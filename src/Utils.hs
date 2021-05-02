@@ -63,7 +63,7 @@ data Error
   | TypeError Coordinates String
   | InternalError Coordinates String
   | PreProcessError Coordinates String
-  deriving (Show)
+  deriving (Show, Eq)
 
 errorLoc :: Error -> Coordinates
 errorLoc (ScanError c _) = c
