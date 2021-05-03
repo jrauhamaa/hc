@@ -51,11 +51,13 @@ instance Alternative PPParser where
               else Left e2
 
 data PPTranslationUnit = PPTranslationUnit [PPSourceLine]
+  deriving (Eq, Show)
 
 -- line in source code
 data PPSourceLine
   = PPSourceLineCodeLine Line
   | PPSourceLineDirective PPDirective
+  deriving (Eq, Show)
 
 -- line starting with #
 data PPDirective
@@ -67,18 +69,21 @@ data PPDirective
   | PPDirectiveError PPError
   | PPDirectivePragma
   | PPDirectiveEmpty
+  deriving (Eq, Show)
 
 data PPDefine
   -- #define varname String
   = PPDefineConst String String
   -- #define varname (arglist) body
-  | PPDefineMacro [String] Line
+  | PPDefineMacro String [String] Line
+  deriving (Eq, Show)
 
 data PPUndef
   -- #undef varname
   = PPUndef String
   -- #undef something else
   | PPUndefMacro Line
+  deriving (Eq, Show)
 
 data PPInclude
   -- #include <something.h>
@@ -87,6 +92,7 @@ data PPInclude
   | PPIncludeInternal String
   -- #include [something else]
   | PPIncludeMacro Line
+  deriving (Eq, Show)
 
 data PPIf
   -- #if Line [PPSourceLine] (Maybe PPElif) #endif
@@ -95,14 +101,17 @@ data PPIf
   | PPIfdef String [PPSourceLine] (Maybe PPElif) (Maybe PPElse)
   -- #ifndef String [PPSourceLine] (Maybe PPElif) (Maybe PPElse) #endif
   | PPIfndef String [PPSourceLine] (Maybe PPElif) (Maybe PPElse)
+  deriving (Eq, Show)
 
 data PPElif
   -- #elif Line [PPSourceLine] (Maybe PPElif)
   = PPElif Line [PPSourceLine] (Maybe PPElif)
+  deriving (Eq, Show)
 
 data PPElse
   -- #else [PPSourceLine]
   = PPElse [PPSourceLine]
+  deriving (Eq, Show)
 
 data PPLine
   -- #line linenum
@@ -111,18 +120,21 @@ data PPLine
   | PPLineFileName Int String
   -- #line anything else
   | PPLineMacro Line
+  deriving (Eq, Show)
 
 data PPError
   -- #error error message
   = PPError Error
   -- #error line to be transformed
   | PPErrorMacro Line
+  deriving (Eq, Show)
 
 data Macro =
   Macro
     { macroConstants :: M.Map String String
     , macroFunctions :: M.Map String (Int, Line)
     }
+  deriving (Eq, Show)
 
 -------------------
 -- PRE-TRANSFORM --
@@ -130,31 +142,32 @@ data Macro =
 
 -- replace trigraph sequences in source string
 trigraph :: String -> String
-trigraph ('?':'?':'=':s) = '#':s
-trigraph ('?':'?':'/':s) = '\\':s
-trigraph ('?':'?':'\'':s) = '^':s
-trigraph ('?':'?':'(':s) = '[':s
-trigraph ('?':'?':')':s) = ']':s
-trigraph ('?':'?':'!':s) = '|':s
-trigraph ('?':'?':'<':s) = '{':s
-trigraph ('?':'?':'>':s) = '}':s
-trigraph ('?':'?':'-':s) = '~':s
-trigraph s = s
+trigraph "" = ""
+trigraph ('?':'?':'=':s) = '#':(trigraph s)
+trigraph ('?':'?':'/':s) = '\\':(trigraph s)
+trigraph ('?':'?':'\'':s) = '^':(trigraph s)
+trigraph ('?':'?':'(':s) = '[':(trigraph s)
+trigraph ('?':'?':')':s) = ']':(trigraph s)
+trigraph ('?':'?':'!':s) = '|':(trigraph s)
+trigraph ('?':'?':'<':s) = '{':(trigraph s)
+trigraph ('?':'?':'>':s) = '}':(trigraph s)
+trigraph ('?':'?':'-':s) = '~':(trigraph s)
+trigraph (c:s) = c:(trigraph s)
 
 -- concat lines ending with backslash
-lineSplice :: String -> String
-lineSplice = concat . lineSplice' . lines
+lineSplice :: String -> [String]
+lineSplice = lineSplice' . lines
   where
     lineSplice' [] = []
     lineSplice' [s] = [s]
     lineSplice' (a:b:rest) =
       if last a == '\\'
-        then lineSplice' $ (init a ++ b):rest
-        else lineSplice' $ a:(lineSplice' $ b:rest)
+        then lineSplice' $ (init a ++ " " ++ b):rest
+        else a:(lineSplice' $ b:rest)
 
 readLines :: String -> Either Error [Line]
 readLines sourceCode = do
-  let sourceLines = lines $ lineSplice $ trigraph sourceCode
+  let sourceLines = lineSplice $ trigraph sourceCode
   traverse
     (\(lineNum, line) -> scanCLine (lineNum, 1) line)
     (zip [1..] sourceLines)
@@ -185,7 +198,6 @@ ppLexemes =
   , LPPLine
   , LPPError
   , LPPPragma
-  , LPPConcat
   , LPPEmpty
   ]
 
@@ -193,7 +205,7 @@ filterWS :: Line -> Line
 filterWS = filter ((/= LWhiteSpace) . scanItem)
 
 dropWS :: Line -> Line
-dropWS = dropWhile ((/= LWhiteSpace) . scanItem)
+dropWS = dropWhile ((== LWhiteSpace) . scanItem)
 
 toString :: Line -> String
 toString = concat . map scanStr
@@ -230,7 +242,8 @@ translationUnitParser = PPParser $ \input ->
     then return ([], PPTranslationUnit [])
     else do
       (input', line) <- runPPParser sourceLineParser input
-      (input'', PPTranslationUnit rest) <- runPPParser translationUnitParser input'
+      (input'', PPTranslationUnit rest) <-
+        runPPParser translationUnitParser input'
       return (input'', PPTranslationUnit $ line:rest)
 
 isPPDirectiveLine :: Line -> Bool
@@ -262,14 +275,14 @@ defineParser = nonEmptyParser $ PPParser $ \(line:rest) ->
    in if (scanItem $ head noWS) == LPPDefine
         then
           case dropWS $ tail noWS of
-            [(ScanItem { scanItem = LStringLiteral varName })] ->
+            [(ScanItem { scanItem = LLabel varName })] ->
               return (rest, PPDefineConst varName "")
-            ((ScanItem { scanItem = LStringLiteral varName }):lineTail) ->
+            ((ScanItem { scanItem = LLabel varName }):lineTail) ->
               case dropWS lineTail of
                 [] -> return (rest, PPDefineConst varName "")
                 ((ScanItem { scanItem = LParenthesisOpen }):listTail) -> do
-                  (varNames, body) <- readMacro (scanLoc $ head line) listTail
-                  return (rest, PPDefineMacro varNames body)
+                  (argNames, body) <- readMacro (scanLoc $ head line) listTail
+                  return (rest, PPDefineMacro varName argNames $ dropWS body)
                 l -> return (rest, PPDefineConst varName $ toString l)
             _ ->
               Left $
@@ -383,9 +396,9 @@ readElif = nonEmptyParser $ PPParser $ \(line:rest) ->
           if (scanItem $ head $ dropWS $ head input') == LPPElif
             then do
               (input'', ppelif) <- runPPParser readElif input'
-              return (input'', PPElif (tail noWS) lns $ Just ppelif)
+              return (input'', PPElif (dropWS $ tail noWS) lns $ Just ppelif)
             else
-              return (input', PPElif (tail noWS) lns Nothing)
+              return (input', PPElif (dropWS $ tail noWS) lns Nothing)
         else
           Left $
             PreProcessError

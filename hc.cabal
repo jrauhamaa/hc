@@ -50,7 +50,9 @@ test-suite tests
   default-language:    Haskell2010
   other-modules:       TestScanner
                      , TestParser
+                     , TestPreProcessor
                      , ParseItem
+                     , PreProcess
                      , Parser
                      , Scanner
                      , Lexeme
