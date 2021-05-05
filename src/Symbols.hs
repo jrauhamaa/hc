@@ -471,7 +471,7 @@ readParamTypeList
      item@(TypeCheckItem
             { typeCheckItem = CParameterTypeList paramList varargs }) = do
   params <- readParamList $ updateTCItem item paramList
-  let varargs' = parseItem varargs == CVarArgsOptionalEmpty
+  let varargs' = parseItem varargs /= CVarArgsOptionalEmpty
   return (varargs', map snd params)
 
 readParamDeclaration :: TypeReader CParameterDeclaration ((Maybe String), CType)
@@ -636,7 +636,7 @@ readFunctionDeclaration
                            , paramNames)
                     else Left $ TypeError c "Invalid parameter declaration"
             _ -> Left $ TypeError c "Invalid function declaration"
-        x -> Left $ TypeError c "Invalid function declaration"
+        _ -> Left $ TypeError c "Invalid function declaration"
 
 readFunctionDefinition :: TypeReader CFunctionDefinition (String, CType, [String])
 readFunctionDefinition
@@ -767,11 +767,13 @@ readDirectDeclarator'
      fName
      item@(TypeCheckItem
             { previousType = t
+            , typeCheckLoc = c
             , typeCheckItem =
                 CDirectDeclarator'ParamTypeList typeList directDecl'
             }) = do
   (varArgs, types) <-
     readParamTypeList $ updateTCItem item typeList
+  validateFunctionReturnType c t
   let t' = CType { storageClass = []
                  , typeQualifier = []
                  , dataType = TFunction fName t types varArgs
