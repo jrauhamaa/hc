@@ -27,7 +27,7 @@ testFullSourceFile = do
       hspec $
         describe "parseCCode" $ do
           context "when given valid input" $ do
-            it "will parse a c source file" $ do
+            it "parses a c source file" $ do
               join ((parseCCode . filterWhiteSpace) <$> scanCCode contents) `shouldSatisfy` isRight
 
 unterminatedBlock :: [ScanItem CLexeme]
@@ -44,11 +44,11 @@ testBadInput :: Spec
 testBadInput =
   describe "parseCCode" $ do
     context "when given bad input" $ do
-      it "will not accept empty source file" $ do
+      it "doesn't accept empty source file" $ do
         parseCCode [ScanItem { scanLoc = (0, 0), scanStr = "", scanItem = LEndMarker }]
           `shouldSatisfy` isLeft
 
-      it "will not accept unterminated block expression" $ do
+      it "doesn't accept unterminated block expression" $ do
         runParser cCompoundStatementP unterminatedBlock `shouldSatisfy` isLeft
 
 testDeclarationInput :: [ScanItem CLexeme]
@@ -113,7 +113,7 @@ testGoodInput :: Spec
 testGoodInput =
   describe "parseCCode" $ do
     context "when given good input" $ do
-      it "will parse a block expression" $ do
+      it "parses a block expression" $ do
         runParser
           cCompoundStatementP
           (unterminatedBlock ++
@@ -122,7 +122,7 @@ testGoodInput =
                       , scanItem = LBraceClose }])
           `shouldSatisfy` isRight
 
-      it "will parse a declaration" $ do
+      it "parses a declaration" $ do
         runParser cDeclarationP testDeclarationInput
           `shouldBe` (Right (testDeclarationInput, [], declarationParse))
 

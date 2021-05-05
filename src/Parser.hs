@@ -516,12 +516,12 @@ cDirectDeclaratorP' =
     (bracketP cConstantExpressionOptionalP)
     cDirectDeclaratorP' <|>
   liftA2
-    CDirectDeclarator'ParamTypeList
-    (parenthesisP cParameterTypeListP)
-    cDirectDeclaratorP' <|>
-  liftA2
     CDirectDeclarator'IdList
     (parenthesisP cIdentifierListOptionalP)
+    cDirectDeclaratorP' <|>
+  liftA2
+    CDirectDeclarator'ParamTypeList
+    (parenthesisP cParameterTypeListP)
     cDirectDeclaratorP' <|>
   pure
     CDirectDeclarator'Empty
@@ -597,7 +597,7 @@ cParameterDeclarationP =
   parserToPIParser $
   liftA2
     CParameterDeclaration
-    cDeclarationSpecifiersP
+    (afterP cDeclarationSpecifiersP cParameterDeclarationP')
     cParameterDeclarationP'
 
 cParameterDeclarationP' :: PIParser CParameterDeclaration'

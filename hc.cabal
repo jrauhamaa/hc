@@ -51,9 +51,12 @@ test-suite tests
   other-modules:       TestScanner
                      , TestParser
                      , TestPreProcessor
+                     , TestSymbols
                      , ParseItem
                      , PreProcess
                      , Parser
+                     , TypeCheck
+                     , Symbols
                      , Scanner
                      , Lexeme
                      , Utils

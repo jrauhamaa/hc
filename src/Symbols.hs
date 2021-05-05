@@ -518,7 +518,14 @@ readParamTypes :: TypeReader CParameterTypeList (Bool, [((Maybe String), CType)]
 readParamTypes
      item@(TypeCheckItem { typeCheckItem = CParameterTypeList list varargs }) = do
   paramList <- readParamList $ updateTCItem item list
-  return (parseItem varargs == CVarArgsOptionalEmpty, paramList)
+  return (parseItem varargs /= CVarArgsOptionalEmpty, paramList)
+
+validateFunctionReturnType :: Coordinates -> CType -> Either Error ()
+validateFunctionReturnType c t =
+  case dataType t of
+    TFunction _ _ _ _ -> Left $ TypeError c "invalid function return type"
+    TStruct _ _ -> Left $ TypeError c "invalid function return type"
+    _ -> return ()
 
 -- returns (function name, function type, param names)
 readFunctionDeclaration ::
@@ -538,13 +545,14 @@ readFunctionDeclaration
             }) =
   case parseItem directDeclarator of
     CDirectDeclaratorParen _ _ ->
-      Left $ TypeError c "1Invalid function declaration"
+      Left $ TypeError c "Invalid function declaration"
     CDirectDeclaratorId (ParseItem { parseItem = CIdentifier fName }) decl ->
       case parseItem decl of
         (CDirectDeclarator'ParamTypeList typeList decl') ->
           case parseItem decl' of
             CDirectDeclarator'Empty -> do
               returnType <- readPointerOptional $ updateTCItem item pointer
+              validateFunctionReturnType c returnType
               (varargs, params) <- readParamTypes $ updateTCItem item typeList
               let functionType =
                     CType
@@ -563,11 +571,12 @@ readFunctionDeclaration
                   if (length $ S.fromList paramNames) == length paramNames
                     then return (fName, functionType, paramNames)
                     else Left $ TypeError c "Conflicting parameter names"
-            _ -> Left $ TypeError c "2Invalid function declaration"
+            _ -> Left $ TypeError c "Invalid function declaration"
         (CDirectDeclarator'IdList
             (ParseItem { parseItem = CIdentifierListOptionalEmpty })
             (ParseItem { parseItem = CDirectDeclarator'Empty })) -> do
           returnType <- readPointerOptional $ updateTCItem item pointer
+          validateFunctionReturnType c returnType
           let functionType =
                 CType
                   { storageClass = []
@@ -575,8 +584,7 @@ readFunctionDeclaration
                   , dataType = TFunction fName returnType [] False
                   }
           return (fName, functionType, [])
-        _ -> Left $ TypeError c "3Invalid function declaration"
-
+        _ -> Left $ TypeError c "Invalid function declaration"
 -- old style
 readFunctionDeclaration
      item@(TypeCheckItem
@@ -598,6 +606,7 @@ readFunctionDeclaration
             CDirectDeclarator'Empty -> do
               params <- readDeclarationList $ updateTCItem item declList
               returnType <- readPointerOptional $ updateTCItem item pointer
+              validateFunctionReturnType c returnType
               paramNames <- case parseItem idList of
                               CIdentifierListOptionalEmpty -> return []
                               CIdentifierListOptional idList' ->
@@ -626,8 +635,8 @@ readFunctionDeclaration
                                }
                            , paramNames)
                     else Left $ TypeError c "Invalid parameter declaration"
-            _ -> Left $ TypeError c "4Invalid function declaration"
-        _ -> Left $ TypeError c "5Invalid function declaration"
+            _ -> Left $ TypeError c "Invalid function declaration"
+        x -> Left $ TypeError c "Invalid function declaration"
 
 readFunctionDefinition :: TypeReader CFunctionDefinition (String, CType, [String])
 readFunctionDefinition
@@ -652,7 +661,7 @@ readInitDeclarator :: TypeReader CInitDeclarator (Bool, String, CType)
 readInitDeclarator
      item@(TypeCheckItem { typeCheckItem = CInitDeclarator decl initOpt }) = do
   (identifier, t') <- readDeclarator $ updateTCItem item decl
-  return (parseItem initOpt == CAssignInitializerOptionalEmpty, identifier, t')
+  return (parseItem initOpt /= CAssignInitializerOptionalEmpty, identifier, t')
 
 readInitDeclaratorList' :: TypeReader CInitDeclaratorList' [(Bool, String, CType)]
 readInitDeclaratorList' (TypeCheckItem { typeCheckItem = CInitDeclaratorList'Empty }) =
