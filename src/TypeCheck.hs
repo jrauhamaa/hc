@@ -37,9 +37,46 @@ childSymbols sym =
     { typedef = M.empty
     , labels = M.empty
     , symbols = M.empty
-    , structured = M.empty
+    , structs = M.empty
+    , unions = M.empty
+    , enums = M.empty
     , parent = Just sym
     }
+
+checkCollisionStructured ::
+     Coordinates -> String -> SymbolTable -> Either Error ()
+checkCollisionStructured c s sym =
+  if (structs' == Nothing)
+     && (enums' == Nothing)
+     && (unions' == Nothing)
+     then return ()
+     else Left $ TypeError c $ "name clash: " ++ s
+  where
+    structs' = M.lookup s $ structs sym
+    enums' = M.lookup s $ enums sym
+    unions' = M.lookup s $ unions sym
+
+checkCollision :: Coordinates -> String -> SymbolTable -> Either Error ()
+checkCollision c s sym =
+  if (typedef' == Nothing)
+     && (labels' == Nothing)
+     && (symbols' == Nothing)
+     then return ()
+     else Left $ TypeError c $ "name clash: " ++ s
+  where
+    typedef' = M.lookup s $ typedef sym
+    labels' = M.lookup s $ labels sym
+    symbols' = M.lookup s $ symbols sym
+
+addTypedef ::
+     String
+  -> CType
+  -> SymbolTable
+  -> Coordinates
+  -> Either Error SymbolTable
+addTypedef label t sym@(SymbolTable { typedef = symTable }) c = do
+  checkCollision c label sym
+  return $ sym { typedef = M.insert label t symTable }
 
 addSymbol ::
      String
@@ -47,20 +84,48 @@ addSymbol ::
   -> SymbolTable
   -> Coordinates
   -> Either Error SymbolTable
-addSymbol label t sym@(SymbolTable { symbols = symTable }) c =
-  case M.lookup label symTable of
-    Nothing -> return $ sym { symbols = M.insert label t symTable }
-    Just _ -> Left $ TypeError c $ "Name clash: " ++ label
+addSymbol label t sym@(SymbolTable { symbols = symTable }) c = do
+  checkCollision c label sym
+  return $ sym { symbols = M.insert label t symTable }
+
+addEnum ::
+     String
+  -> CType
+  -> SymbolTable
+  -> Coordinates
+  -> Either Error SymbolTable
+addEnum label t sym@(SymbolTable { enums = enumTable }) c = do
+  checkCollisionStructured c label sym
+  return $ sym { enums = M.insert label t enumTable }
+
+addStruct ::
+     String
+  -> CType
+  -> SymbolTable
+  -> Coordinates
+  -> Either Error SymbolTable
+addStruct label t sym@(SymbolTable { structs = structTable }) c = do
+  checkCollisionStructured c label sym
+  return $ sym { structs = M.insert label t structTable }
+
+addUnion ::
+     String
+  -> CType
+  -> SymbolTable
+  -> Coordinates
+  -> Either Error SymbolTable
+addUnion label t sym@(SymbolTable { unions = unionTable }) c = do
+  checkCollisionStructured c label sym
+  return $ sym { unions = M.insert label t unionTable }
 
 addLabel ::
      String
   -> Coordinates
   -> SymbolTable
   -> Either Error SymbolTable
-addLabel label c sym@(SymbolTable { labels = labelTable }) =
-  case M.lookup label labelTable of
-    Nothing -> return $ sym { labels = M.insert label c labelTable }
-    Just _ -> Left $ TypeError c $ "Name clash: " ++ label
+addLabel label c sym@(SymbolTable { labels = labelTable }) = do
+  checkCollision c label sym
+  return $ sym { labels = M.insert label c labelTable }
 
 tOptional ::
      Eq a => a
@@ -76,7 +141,7 @@ tOptional empty nonempty extr tSub item@(ParseItem l i _) sym
         return $ ParseItem
           { parseLoc = l
           , parseItem = nonempty subItem
-          , symbolTable = sym
+          , symbolTable = symbolTable subItem
           }
 
 tIdentifier :: TypeAnnotate CIdentifier
@@ -129,14 +194,9 @@ tFunctionDefinition
   spec'          <- tDeclarationSpecifiersOptional spec sym'
   decl'          <- tDeclarator decl sym'
   declList'      <- tDeclarationListOptional declList sym'
-  let sym'' = SymbolTable
-                { typedef = M.empty
-                , labels  = M.empty
-                , symbols = M.fromList $ zip argNames argTypes
-                , structured = M.empty
-                , parent  = Just sym'
-                }
-              where (TFunction _ _ argTypes _) = dataType fType
+  let tmpSym = childSymbols sym'
+      sym'' = tmpSym { symbols = M.fromList $ zip argNames argTypes }
+        where (TFunction _ _ argTypes _) = dataType fType
   compStatement' <- tCompoundStatement compStatement sym''
   return $
     ParseItem
@@ -146,19 +206,40 @@ tFunctionDefinition
 
 tDeclaration :: TypeAnnotate CDeclaration
 tDeclaration (ParseItem l item@(CDeclaration spec initList) _) sym = do
-  declarations <-
+  (isTypedef, declarations) <-
     readDeclaration $ TypeCheckItem { typeCheckLoc = l
                                     , typeCheckSymbols = sym
                                     , typeCheckItem = item
                                     , previousType = emptyType
                                     }
-  sym' <- foldM
-            (\s (_, label, t) -> addSymbol label t s l)
-            sym
-            (snd declarations)
-  spec' <- tDeclarationSpecifiers spec sym'
-  initList' <- tInitDeclaratorListOptional initList sym'
-  return $ ParseItem l (CDeclaration spec' initList') sym'
+  sym' <- if isTypedef
+            then foldM
+                   (\s (_, label, t) -> addTypedef label t s l)
+                   sym
+                   declarations
+            else return sym
+  sym'' <- foldM
+            (\s (_, label, t) ->
+              case dataType t of
+                TFunction _ _ _ _ -> addSymbol label t s l
+                TUnion name _ ->
+                  case name of
+                    Nothing -> return s
+                    Just name' -> addUnion name' t s l
+                TStruct name _ ->
+                  case name of
+                    Nothing -> return s
+                    Just name' -> addStruct name' t s l
+                TEnum name _ ->
+                  case name of
+                    Nothing -> return s
+                    Just name' -> addEnum name' t s l
+                _ -> addSymbol label t s l)
+            sym'
+            declarations
+  spec' <- tDeclarationSpecifiers spec sym''
+  initList' <- tInitDeclaratorListOptional initList sym''
+  return $ ParseItem l (CDeclaration spec' initList') sym''
 
 tDeclarationList :: TypeAnnotate CDeclarationList
 tDeclarationList (ParseItem l (CDeclarationList decl opt) _) sym = do

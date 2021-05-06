@@ -47,7 +47,9 @@ initialSymbols =
     { typedef = M.empty
     , labels  = M.empty
     , symbols = M.empty
-    , structured = M.empty
+    , structs = M.empty
+    , unions = M.empty
+    , enums = M.empty
     , parent  = Nothing
     }
 

@@ -52,6 +52,7 @@ test-suite tests
                      , TestParser
                      , TestPreProcessor
                      , TestSymbols
+                     , TestTypeCheck
                      , ParseItem
                      , PreProcess
                      , Parser

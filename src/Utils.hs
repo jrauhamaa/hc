@@ -51,7 +51,9 @@ data SymbolTable =
     { typedef :: M.Map String CType
     , labels  :: M.Map String Coordinates
     , symbols :: M.Map String CType
-    , structured :: M.Map String CType
+    , structs :: M.Map String CType
+    , unions :: M.Map String CType
+    , enums :: M.Map String CType
     , parent  :: Maybe SymbolTable
     }
   deriving (Show, Eq)
