@@ -2,6 +2,7 @@ module TypeCheck where
 
 import Control.Monad
 import qualified Data.Map as M
+import Data.Maybe (isNothing)
 
 import ParseItem
 import Utils ( Error(..)
@@ -46,9 +47,9 @@ childSymbols sym =
 checkCollisionStructured ::
      Coordinates -> String -> SymbolTable -> Either Error ()
 checkCollisionStructured c s sym =
-  if (structs' == Nothing)
-     && (enums' == Nothing)
-     && (unions' == Nothing)
+  if isNothing structs'
+     && isNothing enums'
+     && isNothing unions'
      then return ()
      else Left $ TypeError c $ "name clash: " ++ s
   where
@@ -58,9 +59,9 @@ checkCollisionStructured c s sym =
 
 checkCollision :: Coordinates -> String -> SymbolTable -> Either Error ()
 checkCollision c s sym =
-  if (typedef' == Nothing)
-     && (labels' == Nothing)
-     && (symbols' == Nothing)
+  if isNothing typedef'
+     && isNothing labels'
+     && isNothing symbols'
      then return ()
      else Left $ TypeError c $ "name clash: " ++ s
   where
@@ -74,7 +75,7 @@ addTypedef ::
   -> SymbolTable
   -> Coordinates
   -> Either Error SymbolTable
-addTypedef label t sym@(SymbolTable { typedef = symTable }) c = do
+addTypedef label t sym@SymbolTable { typedef = symTable } c = do
   checkCollision c label sym
   return $ sym { typedef = M.insert label t symTable }
 
@@ -84,7 +85,7 @@ addSymbol ::
   -> SymbolTable
   -> Coordinates
   -> Either Error SymbolTable
-addSymbol label t sym@(SymbolTable { symbols = symTable }) c = do
+addSymbol label t sym@SymbolTable { symbols = symTable } c = do
   checkCollision c label sym
   return $ sym { symbols = M.insert label t symTable }
 
@@ -94,7 +95,7 @@ addEnum ::
   -> SymbolTable
   -> Coordinates
   -> Either Error SymbolTable
-addEnum label t sym@(SymbolTable { enums = enumTable }) c = do
+addEnum label t sym@SymbolTable { enums = enumTable } c = do
   checkCollisionStructured c label sym
   return $ sym { enums = M.insert label t enumTable }
 
@@ -104,7 +105,7 @@ addStruct ::
   -> SymbolTable
   -> Coordinates
   -> Either Error SymbolTable
-addStruct label t sym@(SymbolTable { structs = structTable }) c = do
+addStruct label t sym@SymbolTable { structs = structTable } c = do
   checkCollisionStructured c label sym
   return $ sym { structs = M.insert label t structTable }
 
@@ -114,7 +115,7 @@ addUnion ::
   -> SymbolTable
   -> Coordinates
   -> Either Error SymbolTable
-addUnion label t sym@(SymbolTable { unions = unionTable }) c = do
+addUnion label t sym@SymbolTable { unions = unionTable } c = do
   checkCollisionStructured c label sym
   return $ sym { unions = M.insert label t unionTable }
 
@@ -123,7 +124,7 @@ addLabel ::
   -> Coordinates
   -> SymbolTable
   -> Either Error SymbolTable
-addLabel label c sym@(SymbolTable { labels = labelTable }) = do
+addLabel label c sym@SymbolTable { labels = labelTable } = do
   checkCollision c label sym
   return $ sym { labels = M.insert label c labelTable }
 
@@ -179,9 +180,9 @@ tExternalDeclaration (ParseItem l (CExternalDeclaration decl) _) sym = do
 
 tFunctionDefinition :: TypeAnnotate CFunctionDefinition
 tFunctionDefinition
-     (ParseItem { parseLoc = l
-                , parseItem = fd@(CFunctionDefinition spec decl declList compStatement)
-                })
+     ParseItem { parseLoc = l
+               , parseItem = fd@(CFunctionDefinition spec decl declList compStatement)
+               }
      sym = do
   (fName, fType, argNames) <-
     readFunctionDefinition $ TypeCheckItem { typeCheckLoc = l
@@ -221,7 +222,7 @@ tDeclaration (ParseItem l item@(CDeclaration spec initList) _) sym = do
   sym'' <- foldM
             (\s (_, label, t) ->
               case dataType t of
-                TFunction _ _ _ _ -> addSymbol label t s l
+                TFunction {} -> addSymbol label t s l
                 TUnion name _ ->
                   case name of
                     Nothing -> return s
@@ -746,10 +747,10 @@ tJumpStatement :: TypeAnnotate CJumpStatement
 tJumpStatement (ParseItem l (CJumpStatementGoto identifier) _) sym = do
   identifier' <- tIdentifier identifier sym
   return $ ParseItem l (CJumpStatementGoto identifier') sym
-tJumpStatement (ParseItem l (CJumpStatementContinue) _) sym =
-  return $ ParseItem l (CJumpStatementContinue) sym
-tJumpStatement (ParseItem l (CJumpStatementBreak) _) sym =
-  return $ ParseItem l (CJumpStatementBreak) sym
+tJumpStatement (ParseItem l CJumpStatementContinue _) sym =
+  return $ ParseItem l CJumpStatementContinue sym
+tJumpStatement (ParseItem l CJumpStatementBreak _) sym =
+  return $ ParseItem l CJumpStatementBreak sym
 tJumpStatement (ParseItem l (CJumpStatementReturn expr) _) sym = do
   expr' <- tExpressionOptional expr sym
   return $ ParseItem l (CJumpStatementReturn expr') sym
@@ -851,7 +852,7 @@ tInclusiveOrExpression (ParseItem l (CInclusiveOrExpression exclusive inclusive)
   return $ ParseItem l (CInclusiveOrExpression exclusive' inclusive') $ symbolTable inclusive'
 
 tInclusiveOrExpression' :: TypeAnnotate CInclusiveOrExpression'
-tInclusiveOrExpression' (ParseItem l (CInclusiveOrExpression'Empty) _) sym =
+tInclusiveOrExpression' (ParseItem l CInclusiveOrExpression'Empty _) sym =
   return $ ParseItem l CInclusiveOrExpression'Empty sym
 tInclusiveOrExpression' (ParseItem l (CInclusiveOrExpression' exclusive inclusive) _) sym = do
   exclusive' <- tExclusiveOrExpression exclusive sym

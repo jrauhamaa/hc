@@ -16,18 +16,21 @@ maintainer:          johannes.rauhamaa@iki.fi
 -- extra-source-files:  CHANGELOG.md
 
 library
-  exposed-modules:     Scanner
+  exposed-modules:     Config
+                     , IR
                      , Lexeme
                      , ParseItem
                      , Parser
+                     , PreProcess
+                     , Scanner
                      , Symbols
                      , TypeCheck
                      , Utils
-                     , PreProcess
   -- other-modules:       TestScanner
   -- other-extensions:
   build-depends:       base ^>=4.14.1.0
                      , containers
+                     , directory
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall -fwarn-tabs
@@ -53,15 +56,18 @@ test-suite tests
                      , TestPreProcessor
                      , TestSymbols
                      , TestTypeCheck
-                     , ParseItem
-                     , PreProcess
-                     , Parser
-                     , TypeCheck
-                     , Symbols
-                     , Scanner
+                     , Config
+                     , IR
                      , Lexeme
+                     , ParseItem
+                     , Parser
+                     , PreProcess
+                     , Scanner
+                     , Symbols
+                     , TypeCheck
                      , Utils
   build-depends:       base
                      , hspec
                      , containers
+                     , directory
   ghc-options:         -Wall -fwarn-tabs

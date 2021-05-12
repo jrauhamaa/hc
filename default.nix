@@ -6,6 +6,7 @@ let
   haskellDeps = ps: with ps; [
     base
     containers
+    directory
     hspec
   ];
 

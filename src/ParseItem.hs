@@ -35,7 +35,7 @@ instance Applicative ParseItem where
   (ParseItem l fab sym) <*> (ParseItem _ a _) =
     ParseItem
       { parseLoc = l
-      , parseItem = fab $ a
+      , parseItem = fab a
       , symbolTable = sym
       }
 

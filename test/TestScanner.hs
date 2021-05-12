@@ -29,8 +29,8 @@ testFullSourceFile = do
               scanCCode contents `shouldSatisfy` isRight
 
             it "produces ScanElements with correct scanStr" $ do
-              ((concat . map scanStr) <$> scanCCode contents)
-                `shouldBe` (Right contents)
+              (concatMap scanStr <$> scanCCode contents)
+                `shouldBe` Right contents
 
 testGoodInput :: Spec
 testGoodInput =
@@ -52,7 +52,7 @@ testGoodInput =
                              ]
             results = scanCCode keywordInput
         results `shouldSatisfy` isRight
-        ((filter (/= LWhiteSpace) . map scanItem) <$> results) `shouldBe` (Right expectedResult)
+        (filter (/= LWhiteSpace) . map scanItem <$> results) `shouldBe` Right expectedResult
 
       it "recognizes preprocessor directives" $ do
         let input = "#define #undef #error #include #line #pragma"
@@ -65,26 +65,26 @@ testGoodInput =
                        ]
             results = scanCCode input
         results `shouldSatisfy` isRight
-        ((filter (/= LWhiteSpace) . map scanItem) <$> results) `shouldBe` (Right expected)
+        (filter (/= LWhiteSpace) . map scanItem <$> results) `shouldBe` Right expected
 
       it "recognizes integer constants" $ do
-        ((filter (/= LWhiteSpace) . map scanItem)
+        (filter (/= LWhiteSpace) . map scanItem
          <$> scanCLine (0, 0) "8 8u 8l 8lu 8ul 010 0x8")
-         `shouldBe` (Right $ take 7 $ repeat $ LIntLiteral 8)
+         `shouldBe` Right (replicate 7 (LIntLiteral 8))
 
       it "recognizes char constants" $ do
-        ((filter (/= LWhiteSpace) . map scanItem)
+        (filter (/= LWhiteSpace) . map scanItem
          <$> scanCLine (0, 0) "'a' L'a' ' ' '\\t' '\\\\' '\\n' '\\''")
-         `shouldBe` (Right $ map LCharLiteral ['a', 'a', ' ', '\t', '\\', '\n', '\''])
+         `shouldBe` Right (map LCharLiteral ['a', 'a', ' ', '\t', '\\', '\n', '\''])
 
       it "recognizes float constants" $ do
-        ((filter (/= LWhiteSpace) . map scanItem)
+        (filter (/= LWhiteSpace) . map scanItem
          <$> scanCLine (0, 0) "1. -.1 1.1 1.1f 1f 1fl 1lf -5e2 5e-2")
-         `shouldBe` (Right $ map LFloatLiteral [1.0, -0.1, 1.1, 1.1, 1.0, 1.0, 1.0, -500.0, 0.05])
+         `shouldBe` Right (map LFloatLiteral [1.0, -0.1, 1.1, 1.1, 1.0, 1.0, 1.0, -500.0, 0.05])
 
       it "recognizes string literals" $ do
-        ((map scanItem) <$> scanCLine (0, 0) "\"foo \\\\ \\n \\t \\\"\"")
-         `shouldBe` (Right $ [LStringLiteral "foo \\ \n \t \""])
+        (map scanItem <$> scanCLine (0, 0) "\"foo \\\\ \\n \\t \\\"\"")
+         `shouldBe` Right [LStringLiteral "foo \\ \n \t \""]
 
 testBadInput :: Spec
 testBadInput =

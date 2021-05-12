@@ -2,7 +2,6 @@ module TestParser where
 
 import Test.Hspec
 
-import Control.Monad
 import Data.Either
 import System.IO
 
@@ -28,7 +27,7 @@ testFullSourceFile = do
         describe "parseCCode" $ do
           context "when given valid input" $ do
             it "parses a c source file" $ do
-              join ((parseCCode . filterWhiteSpace) <$> scanCCode contents) `shouldSatisfy` isRight
+              (scanCCode contents >>= parseCCode . filterWhiteSpace) `shouldSatisfy` isRight
 
 unterminatedBlock :: [ScanItem CLexeme]
 unterminatedBlock =
@@ -124,6 +123,6 @@ testGoodInput =
 
       it "parses a declaration" $ do
         runParser cDeclarationP testDeclarationInput
-          `shouldBe` (Right (testDeclarationInput, [], declarationParse))
+          `shouldBe` Right (testDeclarationInput, [], declarationParse)
 
 

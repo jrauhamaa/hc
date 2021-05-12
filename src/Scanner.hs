@@ -109,8 +109,8 @@ filterWhiteSpace [item]
   | otherwise = [item]
 filterWhiteSpace (item@(ScanItem c s a):item'@(ScanItem _ s' _):rest)
   | scanItem item `elem` toFilter = filterWhiteSpace $ item':rest
-  | scanItem item' `elem` toFilter = filterWhiteSpace $ (ScanItem c (s <> s') a):rest
-  | otherwise = item:(filterWhiteSpace $ item':rest)
+  | scanItem item' `elem` toFilter = filterWhiteSpace $ ScanItem c (s <> s') a : rest
+  | otherwise = item : filterWhiteSpace (item' : rest)
 
 cScanner :: Scanner CLexeme
 cScanner
@@ -362,9 +362,9 @@ escapeS = escapeChar <|> escapeCharOctal <|> escapeCharHex
 ------------------
 
 ppS :: String -> Scanner ()
-ppS s = () <$ (charS '#')
-           <* (spanS (`elem` whiteSpace))
-           <* (stringS s)
+ppS s = () <$ charS '#'
+           <* spanS (`elem` whiteSpace)
+           <* stringS s
 
 lPPDefine :: Scanner CLexeme
 lPPDefine = LPPDefine <$ ppS "define"
@@ -750,9 +750,9 @@ lCharLiteralS =
 -------------------
 
 readFloatLiteral :: String -> String -> String -> Double
-readFloatLiteral s digits exponentPart = sign * (read $ cleanDigits <> exponentPart)
+readFloatLiteral s digits exponentPart = sign * read (cleanDigits <> exponentPart)
   where
-    zeroPadded = '0' : (dropWhile (== '+') digits)
+    zeroPadded = '0' : dropWhile (== '+') digits
     sign = if s == "-" then -1 else 1
     cleanDigits =
       if last zeroPadded == '.'
@@ -803,7 +803,7 @@ lFloatLiteralS'' :: Scanner CLexeme
 lFloatLiteralS'' =
   LFloatLiteral <$>
   liftA3
-     (\sign digits e -> readFloatLiteral sign digits e)
+     readFloatLiteral
      (optionalCharS $ scanIf (`elem` "+-"))
      (spanOneOrMoreS (`elem` decimalDigit))
      (exponentPartS <* optionalCharS floatSuffixS)
@@ -815,7 +815,7 @@ lFloatLiteralS''' =
   liftA2
     (\sign digits -> readFloatLiteral sign digits "")
     (optionalCharS $ scanIf (`elem` "+-"))
-    ((spanOneOrMoreS (`elem` decimalDigit))
+    (spanOneOrMoreS (`elem` decimalDigit)
        <* (stringSIgnoreCase "fl"
            <|> stringSIgnoreCase "f"
            <|> stringSIgnoreCase "lf"))

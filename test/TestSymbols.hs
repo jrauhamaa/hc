@@ -2,7 +2,6 @@ module TestSymbols where
 
 import Test.Hspec
 
-import Control.Monad
 import Data.Either
 import qualified Data.Map as M
 
@@ -28,7 +27,7 @@ mainFunctionType =
         TFunction
           "main"
           (CType [] [] TShort)
-          [ (CType [] [] TShort)
+          [ CType [] [] TShort
           , (CType
               { storageClass = []
               , typeQualifier = []
@@ -52,8 +51,8 @@ testFunctionDefinition =
     context "when given good input" $ do
       it "reads a new style function type" $ do
         let inputSource = "int main (int argc, char* argv[]) { return 0; }"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cFunctionDefinitionP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cFunctionDefinitionP)
             tcItem =
               (\i -> TypeCheckItem
                        { typeCheckSymbols = initialSymbols
@@ -61,13 +60,13 @@ testFunctionDefinition =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readFunctionDefinition <$> tcItem)
-          `shouldBe` (Right ("main", mainFunctionType, ["argc", "argv"]))
+        (tcItem >>= readFunctionDefinition)
+          `shouldBe` Right ("main", mainFunctionType, ["argc", "argv"])
 
       it "reads an old style function type" $ do
         let inputSource = "int main (argc, argv) int argc; char* argv[]; { return 0; }"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cFunctionDefinitionP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cFunctionDefinitionP)
             tcItem =
               (\i -> TypeCheckItem
                        { typeCheckSymbols = initialSymbols
@@ -75,13 +74,13 @@ testFunctionDefinition =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readFunctionDefinition <$> tcItem)
-          `shouldBe` (Right ("main", mainFunctionType, ["argc", "argv"]))
+        (tcItem >>= readFunctionDefinition)
+          `shouldBe` Right ("main", mainFunctionType, ["argc", "argv"])
 
       it "reads a function with no args" $ do
         let inputSource = "int main () { return 0; }"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cFunctionDefinitionP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cFunctionDefinitionP)
             expectedType =
               CType
                 { storageClass = []
@@ -100,14 +99,14 @@ testFunctionDefinition =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readFunctionDefinition <$> tcItem)
-          `shouldBe` (Right ("main", expectedType, []))
+        (tcItem >>= readFunctionDefinition)
+          `shouldBe` Right ("main", expectedType, [])
 
     context "when given bad input" $ do
       it "rejects function with repeated argument names" $ do
         let inputSource = "int main (int foo, char foo) { return 0; }"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cFunctionDefinitionP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cFunctionDefinitionP)
             tcItem =
               (\i -> TypeCheckItem
                        { typeCheckSymbols = initialSymbols
@@ -115,12 +114,12 @@ testFunctionDefinition =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readFunctionDefinition <$> tcItem) `shouldSatisfy` isLeft
+        (tcItem >>= readFunctionDefinition) `shouldSatisfy` isLeft
 
       it "rejects function with a struct return type" $ do
         let inputSource = "struct { int foo; } main () { return 0; }"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cFunctionDefinitionP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cFunctionDefinitionP)
             tcItem =
               (\i -> TypeCheckItem
                        { typeCheckSymbols = initialSymbols
@@ -128,7 +127,7 @@ testFunctionDefinition =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readFunctionDefinition <$> tcItem) `shouldSatisfy` isLeft
+        (tcItem >>= readFunctionDefinition) `shouldSatisfy` isLeft
 
 testDeclaration :: Spec
 testDeclaration =
@@ -136,8 +135,8 @@ testDeclaration =
     context "when given good input" $ do
       it "reads a variable declaration" $ do
         let inputSource = "int foo;"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cDeclarationP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
             expectedType =
               CType
                 { storageClass = []
@@ -151,13 +150,13 @@ testDeclaration =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readDeclaration <$> tcItem)
-          `shouldBe` (Right (False, [(False, "foo", expectedType)]))
+        (tcItem >>= readDeclaration)
+          `shouldBe` Right (False, [(False, "foo", expectedType)])
 
       it "reads a variable declaration with assignment" $ do
         let inputSource = "int foo = 1;"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cDeclarationP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
             expectedType =
               CType
                 { storageClass = []
@@ -171,13 +170,13 @@ testDeclaration =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readDeclaration <$> tcItem)
-          `shouldBe` (Right (False, [(True, "foo", expectedType)]))
+        (tcItem >>= readDeclaration)
+          `shouldBe` Right (False, [(True, "foo", expectedType)])
 
       it "reads a multiple variable declaration" $ do
         let inputSource = "const int foo = 1, bar = 2;"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cDeclarationP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
             expectedType =
               CType
                 { storageClass = []
@@ -191,13 +190,13 @@ testDeclaration =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readDeclaration <$> tcItem)
-          `shouldBe` (Right (False, [(True, "foo", expectedType), (True, "bar", expectedType)]))
+        (tcItem >>= readDeclaration)
+          `shouldBe` Right (False, [(True, "foo", expectedType), (True, "bar", expectedType)])
 
       it "reads an enum declaration" $ do
         let inputSource = "enum foo { FOO, BAR, BAZ };"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cDeclarationP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
             expectedType =
               CType
                 { storageClass = []
@@ -214,13 +213,13 @@ testDeclaration =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readDeclaration <$> tcItem)
-          `shouldBe` (Right (False, [(False, "foo", expectedType)]))
+        (tcItem >>= readDeclaration)
+          `shouldBe` Right (False, [(False, "foo", expectedType)])
 
       it "reads an union declaration" $ do
         let inputSource = "union foo { int bar; float baz; };"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cDeclarationP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
             expectedType =
               CType
                 { storageClass = []
@@ -250,13 +249,13 @@ testDeclaration =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readDeclaration <$> tcItem)
-          `shouldBe` (Right (False, [(False, "foo", expectedType)]))
+        (tcItem >>= readDeclaration)
+          `shouldBe` Right (False, [(False, "foo", expectedType)])
 
       it "reads a struct declaration" $ do
         let inputSource = "struct foo { int bar; float baz; };"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cDeclarationP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
             expectedType =
               CType
                 { storageClass = []
@@ -268,14 +267,14 @@ testDeclaration =
                                 , typeQualifier = []
                                 , dataType = TShort
                                 }
-                        , (Just "bar")
+                        , Just "bar"
                         , Nothing
                         )
                       , ( CType { storageClass = []
                                 , typeQualifier = []
                                 , dataType = TFloat
                                 }
-                        , (Just "baz")
+                        , Just "baz"
                         , Nothing
                         )
                       ]
@@ -287,13 +286,13 @@ testDeclaration =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readDeclaration <$> tcItem)
-          `shouldBe` (Right (False, [(False, "foo", expectedType)]))
+        (tcItem >>= readDeclaration)
+          `shouldBe` Right (False, [(False, "foo", expectedType)])
 
       it "reads a function declaration" $ do
         let inputSource = "int foo (int, float);"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cDeclarationP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
             expectedType =
               CType
                 { storageClass = []
@@ -323,13 +322,13 @@ testDeclaration =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readDeclaration <$> tcItem)
-          `shouldBe` (Right (False, [(False, "foo", expectedType)]))
+        (tcItem >>= readDeclaration)
+          `shouldBe` Right (False, [(False, "foo", expectedType)])
 
       it "reads a function declaration with variable names" $ do
         let inputSource = "int foo (int bar, float baz);"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cDeclarationP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
             expectedType =
               CType
                 { storageClass = []
@@ -359,14 +358,14 @@ testDeclaration =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readDeclaration <$> tcItem)
-          `shouldBe` (Right (False, [(False, "foo", expectedType)]))
+        (tcItem >>= readDeclaration)
+          `shouldBe` Right (False, [(False, "foo", expectedType)])
 
     context "when given bad input" $ do
       it "rejects a struct with multiple fields with same name" $ do
         let inputSource = "struct foo { int bar; float bar; };"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cDeclarationP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
             tcItem =
               (\i -> TypeCheckItem
                        { typeCheckSymbols = initialSymbols
@@ -374,13 +373,13 @@ testDeclaration =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readDeclaration <$> tcItem) `shouldSatisfy` isLeft
+        (tcItem >>= readDeclaration) `shouldSatisfy` isLeft
 
     context "when given bad input" $ do
       it "rejects a function with struct as return type" $ do
         let inputSource = "struct { int foo; } bar (int baz);"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> (scanCLine (0, 0) inputSource)
-            ast = (\(_, _, i) -> i) <$> join (runParser cDeclarationP <$> scanItems)
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) inputSource
+            ast = (\(_, _, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
             tcItem =
               (\i -> TypeCheckItem
                        { typeCheckSymbols = initialSymbols
@@ -388,5 +387,5 @@ testDeclaration =
                        , typeCheckLoc = (0, 0)
                        , typeCheckItem = parseItem i
                        }) <$> ast
-        join (readDeclaration <$> tcItem) `shouldSatisfy` isLeft
+        (tcItem >>= readDeclaration) `shouldSatisfy` isLeft
 

@@ -46,7 +46,7 @@ instance Alternative Parser where
         case runParser p2 input of
           r@(Right _) -> r
           Left e2 ->
-            if (errorLoc e1) >= (errorLoc e2)
+            if errorLoc e1 >= errorLoc e2
               then Left e1
               else Left e2
 
@@ -164,7 +164,7 @@ afterP before after =
               resultP@(Right (_, remainingP, _)) -> do
                 (_, remainingAccAfter, _) <- runParser after remainingAcc
                 (_, remainingPAfter, _) <- runParser after remainingP
-                if (length remainingAccAfter) <= (length remainingPAfter)
+                if length remainingAccAfter <= length remainingPAfter
                   then resultAcc
                   else resultP
     splitParser n =
@@ -481,7 +481,7 @@ cEnumeratorP =
     CEnumeratorAssign
     cIdentifierP
     (singleP LAssign *> cConstantExpressionP) <|>
-  liftA
+  fmap
     CEnumerator
     cIdentifierP
 
@@ -731,14 +731,14 @@ cLabeledStatementP =
     CLabeledStatementCase
     (singleP LCase *> cConstantExpressionP)
     (singleP LColon *> cStatementP) <|>
-  liftA
+  fmap
     CLabeledStatementDefault
     (singleP LDefault *> singleP LColon *> cStatementP)
 
 cExpressionStatementP :: PIParser CExpressionStatement
 cExpressionStatementP =
   parserToPIParser $
-  liftA
+  fmap
     CExpressionStatement
     (cExpressionOptionalP <* singleP LSemiColon)
 
@@ -840,7 +840,7 @@ cAssignmentExpressionP =
     cUnaryExpressionP
     cAssignmentOperatorP
     cAssignmentExpressionP <|>
-  liftA
+  fmap
     CAssignmentExpressionConditional
     cConditionalExpressionP
 
@@ -1107,7 +1107,7 @@ cCastExpressionP =
     CCastExpression
     (parenthesisP cTypeNameP)
     cCastExpressionP <|>
-  liftA
+  fmap
     CCastExpressionUnary
     cUnaryExpressionP
 
@@ -1158,10 +1158,10 @@ cPostfixExpressionP' =
     CPostfixExpression'Arrow
     (singleP LArrow *> cIdentifierP)
     cPostfixExpressionP' <|>
-  liftA
+  fmap
     CPostfixExpression'Inc
     (singleP LIncrement *> cPostfixExpressionP') <|>
-  liftA
+  fmap
     CPostfixExpression'Dec
     (singleP LDecrement *> cPostfixExpressionP') <|>
   pure
