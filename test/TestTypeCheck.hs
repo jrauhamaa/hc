@@ -128,10 +128,10 @@ testTypeCheck = hspec $ do
 
       it "reads labels" $ do
         let sourceCode = "{ label1: printf(\"foobar\"); label2: return 0; }"
-            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (0, 0) sourceCode
+            scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine (1, 1) sourceCode
             ast = scanItems >>= runParser cCompoundStatementP
             expectedLabels =
-              M.fromList [("label1", (0, 3)), ("label2", (0, 29))]
+              M.fromList [("label1", (1, 3)), ("label2", (1, 29))]
             typeCheckedAst = ast >>= (\(_, _, ast') -> tCompoundStatement ast' initialSymbols)
             statements =
               case parseItem <$> typeCheckedAst of

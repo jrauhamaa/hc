@@ -2,9 +2,11 @@ module TestPreProcessor where
 
 import Test.Hspec
 
+import System.IO
 import Data.Either
 import qualified Data.Map as M
 
+import Utils
 import Lexeme
 import Scanner
 import PreProcess
@@ -16,6 +18,10 @@ testPreProcessor = do
   hspec testRemoveComments
   hspec testParsers
   hspec testConcatTokens
+  hspec testPPTransform
+  hspec testPreTransform
+  hspec testMacroTransform
+  testPreProcessCode
 
 testTriGraph :: Spec
 testTriGraph =
@@ -233,6 +239,143 @@ testMacroTransform =
       let macroDict       = M.singleton "PI" $ MacroConstant "3.14"
           sourceCode      = "int area(int r) { return PI * r * r; }"
           transformedCode = "int area(int r) { return 3.14 * r * r; }"
-      (scanCLineNoWS (0, 0) sourceCode >>= macroTransform macroDict)
-        `shouldBe` (scanCLine (0, 0) transformedCode)
+      (scanCLineNoWS (0, 0) sourceCode >>= macroTransform (0, 0) macroDict)
+        `shouldBe` scanCLineNoWS (0, 0) transformedCode
 
+    it "replaces macro function invocations with relevant values" $ do
+      let macroDict =
+            M.fromList
+              [ ("PI", MacroConstant "3.14")
+              , ( "AREA"
+                , MacroFunction
+                    ["r"]
+                    -- (PI * (r) * (r))
+                    [ ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
+                    , ScanItem { scanLoc = (0, 0), scanStr = "PI ", scanItem = LLabel "PI" }
+                    , ScanItem { scanLoc = (0, 0), scanStr = "* ", scanItem = LStar }
+                    , ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
+                    , ScanItem { scanLoc = (0, 0), scanStr = "r", scanItem = LLabel "r" }
+                    , ScanItem { scanLoc = (0, 0), scanStr = ") ", scanItem = LParenthesisClose }
+                    , ScanItem { scanLoc = (0, 0), scanStr = "* ", scanItem = LStar }
+                    , ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
+                    , ScanItem { scanLoc = (0, 0), scanStr = "r", scanItem = LLabel "r" }
+                    , ScanItem { scanLoc = (0, 0), scanStr = ")", scanItem = LParenthesisClose }
+                    , ScanItem { scanLoc = (0, 0), scanStr = ")", scanItem = LParenthesisClose }
+                    ]
+                )
+              ]
+          sourceCode      = "int area = AREA(x+y);"
+          transformedCode = "int area = (3.14 * (x+y) * (x+y));"
+      (scanCLineNoWS (0, 0) sourceCode >>= macroTransform (0, 0) macroDict)
+        `shouldBe` scanCLineNoWS (0, 0) transformedCode
+
+    it "it re-expands macros containing macro values" $ do
+      let macroDict =
+            M.fromList
+              [ ("PI", MacroConstant "3.14")
+              , ("DOUBLEPI", MacroConstant "2*PI")
+              ]
+          sourceCode      = "int x = DOUBLEPI;"
+          transformedCode = "int x = 2*3.14;"
+      (scanCLineNoWS (0, 0) sourceCode >>= macroTransform (0, 0) macroDict)
+        `shouldBe` scanCLineNoWS (0, 0) transformedCode
+
+testPPTransform :: Spec
+testPPTransform = do
+  describe "ppTransformError" $ do
+    it "produces an error" $ do
+      result <- ppTransformError
+                  (Context "" 0 M.empty)
+                  (PPErrorMacro
+                    [ScanItem (0, 1) "errorMessage" $ LLabel "errorMessage"])
+      result `shouldBe` Left (PreProcessError (0, 1) "errorMessage")
+
+  describe "ppTransformLine" $ do
+    it "sets the line number and file name" $ do
+      result <- ppTransformLine
+                  (Context "" 0 M.empty)
+                  (PPLineMacro
+                    [ ScanItem (0, 1) "10 " $ LIntLiteral 10
+                    , ScanItem (0, 4) "foo" $ LLabel "foo"
+                    , ScanItem (0, 7) "." LDot
+                    , ScanItem (0, 8) "h" $ LLabel "h"
+                    ])
+      result `shouldBe` Right (Context "foo.h" 11 M.empty, [])
+
+  describe "ppTransformInclude" $ do
+    it "includes contents of specified file" $ do
+      let expected =
+            Context
+              { fileName = "foo"
+              , lineNum = 1
+              , macroSymbols =
+                  M.fromList
+                    [ ("PI", MacroConstant "3.14")
+                    , ("VARPREFIX", MacroConstant "foo")
+                    , ( "MAKEVARNAME"
+                      , MacroFunction
+                          ["name"]
+                          [ ScanItem { scanLoc = (3, 27)
+                                     , scanStr = "VARPREFIX "
+                                     , scanItem = LLabel "VARPREFIX" }
+                          , ScanItem { scanLoc = (3, 37)
+                                     , scanStr = "## "
+                                     , scanItem = LPPConcat }
+                          , ScanItem { scanLoc = (3, 40)
+                                     , scanStr = "name"
+                                     , scanItem = LLabel "name" }
+                          ]
+                      )
+                    ]
+              }
+      result <- ppTransformInclude
+                  (Context "foo" 0 M.empty)
+                  (PPIncludeInternal "test/pptest.h")
+      result `shouldBe` Right (expected, [])
+
+testPreTransform :: Spec
+testPreTransform = do
+  describe "preTransform" $ do
+    it "correctly transforms source code" $ do
+      let sourceCode =
+            unlines [ "??=include <stdio.h>"
+                    , "// a comment \\"
+                    , ""
+                    , "int foo = 1; /* another comment */"
+                    ]
+          expected =
+            [ [ ScanItem { scanLoc = (1, 1), scanStr = "#include ", scanItem = LPPInclude }
+              , ScanItem { scanLoc = (1, 10), scanStr = "<", scanItem = LLT }
+              , ScanItem { scanLoc = (1, 11), scanStr = "stdio", scanItem = LLabel "stdio" }
+              , ScanItem { scanLoc = (1, 16), scanStr = ".", scanItem = LDot }
+              , ScanItem { scanLoc = (1, 17), scanStr = "h", scanItem = LLabel "h" }
+              , ScanItem { scanLoc = (1, 18), scanStr = ">", scanItem = LGT }
+              ]
+            , []
+            , [ ScanItem { scanLoc = (3, 1), scanStr = "int ", scanItem = LInt }
+              , ScanItem { scanLoc = (3, 5), scanStr = "foo ", scanItem = LLabel "foo" }
+              , ScanItem { scanLoc = (3, 9), scanStr = "= ", scanItem = LAssign }
+              , ScanItem { scanLoc = (3, 11), scanStr = "1", scanItem = LIntLiteral 1 }
+              , ScanItem { scanLoc = (3, 12), scanStr = ";  ", scanItem = LSemiColon }
+              ]
+            ]
+
+      preTransform sourceCode `shouldBe` Right expected
+
+testPreProcessCode :: IO ()
+testPreProcessCode = do
+  withFile
+    "test/pptest.c"
+    ReadMode $
+    \f -> do
+      contents <- hGetContents f
+      hspec $
+        describe "preProcessCode" $ do
+          it "correctly preprocesses a c source file" $ do
+            let expected =
+                  [ LInt, LLabel "foo1", LAssign, LIntLiteral 1, LSemiColon
+                  , LInt, LLabel "foo4", LAssign, LIntLiteral 4, LSemiColon
+                  , LInt, LLabel "foo6", LAssign, LIntLiteral 6, LSemiColon
+                  ]
+            ppResults <- preProcessCode "pptest.c" contents
+            fmap (map scanItem) ppResults `shouldBe` Right expected

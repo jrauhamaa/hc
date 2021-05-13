@@ -76,6 +76,7 @@ instance Alternative Scanner where
 ------------------
 
 scanCLine :: Coordinates -> String -> Either Error [ScanItem CLexeme]
+scanCLine _ [] = return []
 scanCLine c input =
   case runScanner cScanner (c, input) of
     Left e -> Left e
@@ -282,7 +283,7 @@ scanIf f =
     (l, "") -> Left $ emptyInputError l
     (l, c:s) ->
       if f c
-        then Right ((nextLoc c l, s), ScanItem (nextLoc c l) (c:"") c)
+        then Right ((nextLoc c l, s), ScanItem l (c:"") c)
         else Left $ ScanError l "Unexpected input."
 
 spanS :: (Char -> Bool) -> Scanner String

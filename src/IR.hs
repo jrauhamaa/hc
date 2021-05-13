@@ -6,199 +6,227 @@ import Data.Char (ord)
 import ParseItem
 import Utils
 
-evaluateConstantIntExpression :: CConstantExpression -> Either Error Int
-evaluateConstantIntExpression (CConstantExpression condExpr) =
-  constIntConditionalExpression $ parseItem condExpr
+type EvaluationResult = Either Error Double
 
-constIntConditionalExpression :: CConditionalExpression -> Either Error Int
-constIntConditionalExpression (CConditionalExpression orExpr ternaryOpt) = do
-  x <- constIntLogicalOrExpression $ parseItem orExpr
-  constIntTernaryOptional x $ parseItem ternaryOpt
+doubleToInteger :: Coordinates -> Double -> Either Error Int
+doubleToInteger c x =
+  if fromIntegral (floor x :: Int) == x
+    then return $ floor x
+    else Left . TypeError c $ "expected int value instead of float"
 
-constIntTernaryOptional :: Int -> CTernaryOptional -> Either Error Int
-constIntTernaryOptional x CTernaryOptionalEmpty = return x
-constIntTernaryOptional x (CTernaryOptional expr condExpr) =
+evaluateConstantExpression :: CConstantExpression -> EvaluationResult
+evaluateConstantExpression (CConstantExpression condExpr) =
+  evaluateConditionalExpression $ parseItem condExpr
+
+evaluateConditionalExpression :: CConditionalExpression -> EvaluationResult
+evaluateConditionalExpression (CConditionalExpression orExpr ternaryOpt) = do
+  x <- evaluateLogicalOrExpression $ parseItem orExpr
+  evaluateTernaryOptional x $ parseItem ternaryOpt
+
+evaluateTernaryOptional :: Double -> CTernaryOptional -> EvaluationResult
+evaluateTernaryOptional x CTernaryOptionalEmpty = return x
+evaluateTernaryOptional x (CTernaryOptional expr condExpr) =
   if x == 0
-    then constIntConditionalExpression $ parseItem condExpr
-    else constIntExpression $ parseItem expr
+    then evaluateConditionalExpression $ parseItem condExpr
+    else evaluateExpression $ parseItem expr
 
-constIntLogicalOrExpression :: CLogicalOrExpression -> Either Error Int
-constIntLogicalOrExpression (CLogicalOrExpression andExpr orExpr') = do
-  x <- constIntLogicalAndExpression $ parseItem andExpr
+evaluateLogicalOrExpression :: CLogicalOrExpression -> EvaluationResult
+evaluateLogicalOrExpression (CLogicalOrExpression andExpr orExpr') = do
+  x <- evaluateLogicalAndExpression $ parseItem andExpr
   if x == 0
-    then constIntLogicalOrExpression' $ parseItem orExpr'
+    then evaluateLogicalOrExpression' $ parseItem orExpr'
     else return x
 
-constIntLogicalOrExpression' :: CLogicalOrExpression' -> Either Error Int
-constIntLogicalOrExpression' CLogicalOrExpression'Empty = return 0
-constIntLogicalOrExpression' (CLogicalOrExpression' andExpr orExpr') = do
-  x <- constIntLogicalAndExpression $ parseItem andExpr
+evaluateLogicalOrExpression' :: CLogicalOrExpression' -> EvaluationResult
+evaluateLogicalOrExpression' CLogicalOrExpression'Empty = return 0
+evaluateLogicalOrExpression' (CLogicalOrExpression' andExpr orExpr') = do
+  x <- evaluateLogicalAndExpression $ parseItem andExpr
   if x == 0
-    then constIntLogicalOrExpression' $ parseItem orExpr'
+    then evaluateLogicalOrExpression' $ parseItem orExpr'
     else return x
 
-constIntLogicalAndExpression :: CLogicalAndExpression -> Either Error Int
-constIntLogicalAndExpression (CLogicalAndExpression orExpr andExpr') = do
-  x <- constIntInclusiveOrExpression $ parseItem orExpr
+evaluateLogicalAndExpression :: CLogicalAndExpression -> EvaluationResult
+evaluateLogicalAndExpression (CLogicalAndExpression orExpr andExpr') = do
+  x <- evaluateInclusiveOrExpression $ parseItem orExpr
   if x == 0
     then return 0
-    else constIntLogicalAndExpression' $ parseItem andExpr'
+    else evaluateLogicalAndExpression' x $ parseItem andExpr'
 
-constIntLogicalAndExpression' :: CLogicalAndExpression' -> Either Error Int
-constIntLogicalAndExpression' CLogicalAndExpression'Empty = return 0
-constIntLogicalAndExpression' (CLogicalAndExpression' orExpr andExpr') = do
-  x <- constIntInclusiveOrExpression $ parseItem orExpr
+evaluateLogicalAndExpression' :: Double -> CLogicalAndExpression' -> EvaluationResult
+evaluateLogicalAndExpression' x CLogicalAndExpression'Empty = return x
+evaluateLogicalAndExpression' _ (CLogicalAndExpression' orExpr andExpr') = do
+  x <- evaluateInclusiveOrExpression $ parseItem orExpr
   if x == 0
     then return 0
-    else constIntLogicalAndExpression' $ parseItem andExpr'
+    else evaluateLogicalAndExpression' x $ parseItem andExpr'
 
-constIntInclusiveOrExpression :: CInclusiveOrExpression -> Either Error Int
-constIntInclusiveOrExpression (CInclusiveOrExpression exclOr inclOr') = do
-  x <- constIntExclusiveOrExpression $ parseItem exclOr
-  constIntInclusiveOrExpression' x $ parseItem inclOr'
+evaluateInclusiveOrExpression :: CInclusiveOrExpression -> EvaluationResult
+evaluateInclusiveOrExpression (CInclusiveOrExpression exclOr inclOr') = do
+  x <- evaluateExclusiveOrExpression $ parseItem exclOr
+  evaluateInclusiveOrExpression' x $ parseItem inclOr'
 
-constIntInclusiveOrExpression' :: Int -> CInclusiveOrExpression' -> Either Error Int
-constIntInclusiveOrExpression' x CInclusiveOrExpression'Empty = return x
-constIntInclusiveOrExpression' x (CInclusiveOrExpression' exclOr inclOr') = do
-  x' <- constIntExclusiveOrExpression $ parseItem exclOr
-  constIntInclusiveOrExpression' (x .|. x') (parseItem inclOr')
+evaluateInclusiveOrExpression' :: Double -> CInclusiveOrExpression' -> EvaluationResult
+evaluateInclusiveOrExpression' x CInclusiveOrExpression'Empty = return x
+evaluateInclusiveOrExpression' x (CInclusiveOrExpression' exclOr inclOr') = do
+  x' <- evaluateExclusiveOrExpression $ parseItem exclOr
+  ix <- doubleToInteger (parseLoc exclOr) x
+  ix' <- doubleToInteger (parseLoc exclOr) x'
+  evaluateInclusiveOrExpression' (fromIntegral (ix .|. ix')) (parseItem inclOr')
 
-constIntExclusiveOrExpression :: CExclusiveOrExpression -> Either Error Int
-constIntExclusiveOrExpression (CExclusiveOrExpression andExpr orExpr') = do
-  x <- constIntAndExpression $ parseItem andExpr
-  constIntExclusiveOrExpression' x $ parseItem orExpr'
+evaluateExclusiveOrExpression :: CExclusiveOrExpression -> EvaluationResult
+evaluateExclusiveOrExpression (CExclusiveOrExpression andExpr orExpr') = do
+  x <- evaluateAndExpression $ parseItem andExpr
+  evaluateExclusiveOrExpression' x $ parseItem orExpr'
 
-constIntExclusiveOrExpression' :: Int -> CExclusiveOrExpression' -> Either Error Int
-constIntExclusiveOrExpression' x CExclusiveOrExpression'Empty = return x
-constIntExclusiveOrExpression' x (CExclusiveOrExpression' andExpr orExpr') = do
-  x' <- constIntAndExpression $ parseItem andExpr
-  constIntExclusiveOrExpression' (x `xor` x') (parseItem orExpr')
+evaluateExclusiveOrExpression' :: Double -> CExclusiveOrExpression' -> EvaluationResult
+evaluateExclusiveOrExpression' x CExclusiveOrExpression'Empty = return x
+evaluateExclusiveOrExpression' x (CExclusiveOrExpression' andExpr orExpr') = do
+  x' <- evaluateAndExpression $ parseItem andExpr
+  ix <- doubleToInteger (parseLoc andExpr) x
+  ix' <- doubleToInteger (parseLoc andExpr) x'
+  evaluateExclusiveOrExpression' (fromIntegral (ix `xor` ix')) (parseItem orExpr')
 
-constIntAndExpression :: CAndExpression -> Either Error Int
-constIntAndExpression (CAndExpression eqExpr andExpr') = do
-  x <- constIntEqualityExpression $ parseItem eqExpr
-  constIntAndExpression' x $ parseItem andExpr'
+evaluateAndExpression :: CAndExpression -> EvaluationResult
+evaluateAndExpression (CAndExpression eqExpr andExpr') = do
+  x <- evaluateEqualityExpression $ parseItem eqExpr
+  evaluateAndExpression' x $ parseItem andExpr'
 
-constIntAndExpression' :: Int -> CAndExpression' -> Either Error Int
-constIntAndExpression' x CAndExpression'Empty = return x
-constIntAndExpression' x (CAndExpression' eqExpr andExpr') = do
-  x' <- constIntEqualityExpression $ parseItem eqExpr
-  constIntAndExpression' (x .&. x') (parseItem andExpr')
+evaluateAndExpression' :: Double -> CAndExpression' -> EvaluationResult
+evaluateAndExpression' x CAndExpression'Empty = return x
+evaluateAndExpression' x (CAndExpression' eqExpr andExpr') = do
+  x' <- evaluateEqualityExpression $ parseItem eqExpr
+  ix <- doubleToInteger (parseLoc eqExpr) x
+  ix' <- doubleToInteger (parseLoc eqExpr) x'
+  evaluateAndExpression' (fromIntegral (ix .&. ix')) (parseItem andExpr')
 
-constIntEqualityExpression :: CEqualityExpression -> Either Error Int
-constIntEqualityExpression (CEqualityExpression relExpr eqExpr') = do
-  x <- constIntRelationalExpression $ parseItem relExpr
-  constIntEqualityExpression' x $ parseItem eqExpr'
+evaluateEqualityExpression :: CEqualityExpression -> EvaluationResult
+evaluateEqualityExpression (CEqualityExpression relExpr eqExpr') = do
+  x <- evaluateRelationalExpression $ parseItem relExpr
+  evaluateEqualityExpression' x $ parseItem eqExpr'
 
-constIntEqualityExpression' :: Int -> CEqualityExpression' -> Either Error Int
-constIntEqualityExpression' x CEqualityExpression'Empty = return x
-constIntEqualityExpression' x (CEqualityExpression'EQ relExpr eqExpr') = do
-  x' <- constIntRelationalExpression $ parseItem relExpr
+evaluateEqualityExpression' :: Double -> CEqualityExpression' -> EvaluationResult
+evaluateEqualityExpression' x CEqualityExpression'Empty = return x
+evaluateEqualityExpression' x (CEqualityExpression'EQ relExpr eqExpr') = do
+  x' <- evaluateRelationalExpression $ parseItem relExpr
   if x == x'
-    then constIntEqualityExpression' x' $ parseItem eqExpr'
+    then evaluateEqualityExpression' x' $ parseItem eqExpr'
     else return 0
-constIntEqualityExpression' x (CEqualityExpression'NEQ relExpr eqExpr') = do
-  x' <- constIntRelationalExpression $ parseItem relExpr
+evaluateEqualityExpression' x (CEqualityExpression'NEQ relExpr eqExpr') = do
+  x' <- evaluateRelationalExpression $ parseItem relExpr
   if x /= x'
-    then constIntEqualityExpression' x' $ parseItem eqExpr'
+    then evaluateEqualityExpression' x' $ parseItem eqExpr'
     else return 0
 
-constIntRelationalExpression :: CRelationalExpression -> Either Error Int
-constIntRelationalExpression (CRelationalExpression shiftExpr relExpr') = do
-  x <- constIntShiftExpression $ parseItem shiftExpr
-  constIntRelationalExpression' x $ parseItem relExpr'
+evaluateRelationalExpression :: CRelationalExpression -> EvaluationResult
+evaluateRelationalExpression (CRelationalExpression shiftExpr relExpr') = do
+  x <- evaluateShiftExpression $ parseItem shiftExpr
+  evaluateRelationalExpression' x $ parseItem relExpr'
 
-constIntRelationalExpression' :: Int -> CRelationalExpression' -> Either Error Int
-constIntRelationalExpression' x CRelationalExpression'Empty = return x
-constIntRelationalExpression' x (CRelationalExpression'LT shiftExpr relExpr') = do
-  x' <- constIntShiftExpression $ parseItem shiftExpr
+evaluateRelationalExpression' :: Double -> CRelationalExpression' -> EvaluationResult
+evaluateRelationalExpression' x CRelationalExpression'Empty = return x
+evaluateRelationalExpression' x (CRelationalExpression'LT shiftExpr relExpr') = do
+  x' <- evaluateShiftExpression $ parseItem shiftExpr
   if x < x'
-    then constIntRelationalExpression' x' $ parseItem relExpr'
+    then evaluateRelationalExpression' x' $ parseItem relExpr'
     else return 0
-constIntRelationalExpression' x (CRelationalExpression'LTE shiftExpr relExpr') = do
-  x' <- constIntShiftExpression $ parseItem shiftExpr
+evaluateRelationalExpression' x (CRelationalExpression'LTE shiftExpr relExpr') = do
+  x' <- evaluateShiftExpression $ parseItem shiftExpr
   if x <= x'
-    then constIntRelationalExpression' x' $ parseItem relExpr'
+    then evaluateRelationalExpression' x' $ parseItem relExpr'
     else return 0
-constIntRelationalExpression' x (CRelationalExpression'GT shiftExpr relExpr') = do
-  x' <- constIntShiftExpression $ parseItem shiftExpr
+evaluateRelationalExpression' x (CRelationalExpression'GT shiftExpr relExpr') = do
+  x' <- evaluateShiftExpression $ parseItem shiftExpr
   if x > x'
-    then constIntRelationalExpression' x' $ parseItem relExpr'
+    then evaluateRelationalExpression' x' $ parseItem relExpr'
     else return 0
-constIntRelationalExpression' x (CRelationalExpression'GTE shiftExpr relExpr') = do
-  x' <- constIntShiftExpression $ parseItem shiftExpr
+evaluateRelationalExpression' x (CRelationalExpression'GTE shiftExpr relExpr') = do
+  x' <- evaluateShiftExpression $ parseItem shiftExpr
   if x >= x'
-    then constIntRelationalExpression' x' $ parseItem relExpr'
+    then evaluateRelationalExpression' x' $ parseItem relExpr'
     else return 0
 
-constIntShiftExpression :: CShiftExpression -> Either Error Int
-constIntShiftExpression (CShiftExpression addExpr shiftExpr') = do
-  x <- constIntAdditiveExpression $ parseItem addExpr
-  constIntShiftExpression' x $ parseItem shiftExpr'
+evaluateShiftExpression :: CShiftExpression -> EvaluationResult
+evaluateShiftExpression (CShiftExpression addExpr shiftExpr') = do
+  x <- evaluateAdditiveExpression $ parseItem addExpr
+  evaluateShiftExpression' x $ parseItem shiftExpr'
 
-constIntShiftExpression' :: Int -> CShiftExpression' -> Either Error Int
-constIntShiftExpression' x CShiftExpression'Empty = return x
-constIntShiftExpression' x (CShiftExpression'Left addExpr shiftExpr') = do
-  x' <- constIntAdditiveExpression $ parseItem addExpr
-  constIntShiftExpression' (x `shiftL` x') $ parseItem shiftExpr'
-constIntShiftExpression' x (CShiftExpression'Right addExpr shiftExpr') = do
-  x' <- constIntAdditiveExpression $ parseItem addExpr
-  constIntShiftExpression' (x `shiftR` x') (parseItem shiftExpr')
+evaluateShiftExpression' :: Double -> CShiftExpression' -> EvaluationResult
+evaluateShiftExpression' x CShiftExpression'Empty = return x
+evaluateShiftExpression' x (CShiftExpression'Left addExpr shiftExpr') = do
+  x' <- evaluateAdditiveExpression $ parseItem addExpr
+  ix <- doubleToInteger (parseLoc addExpr) x
+  ix' <- doubleToInteger (parseLoc addExpr) x'
+  evaluateShiftExpression'
+    (fromIntegral (ix `shiftL` ix'))
+    (parseItem shiftExpr')
+evaluateShiftExpression' x (CShiftExpression'Right addExpr shiftExpr') = do
+  x' <- evaluateAdditiveExpression $ parseItem addExpr
+  ix <- doubleToInteger (parseLoc addExpr) x
+  ix' <- doubleToInteger (parseLoc addExpr) x'
+  evaluateShiftExpression'
+    (fromIntegral (ix `shiftR` ix'))
+    (parseItem shiftExpr')
 
-constIntAdditiveExpression :: CAdditiveExpression -> Either Error Int
-constIntAdditiveExpression (CAdditiveExpression multExpr addExpr') = do
-  x <- constIntMultiplicativeExpression $ parseItem multExpr
-  constIntAdditiveExpression' x $ parseItem addExpr'
+evaluateAdditiveExpression :: CAdditiveExpression -> EvaluationResult
+evaluateAdditiveExpression (CAdditiveExpression multExpr addExpr') = do
+  x <- evaluateMultiplicativeExpression $ parseItem multExpr
+  evaluateAdditiveExpression' x $ parseItem addExpr'
 
-constIntAdditiveExpression' :: Int -> CAdditiveExpression' -> Either Error Int
-constIntAdditiveExpression' x CAdditiveExpression'Empty = return x
-constIntAdditiveExpression' x (CAdditiveExpression'Add multExpr addExpr') = do
-  x' <- constIntMultiplicativeExpression $ parseItem multExpr
-  constIntAdditiveExpression' (x + x') (parseItem addExpr')
-constIntAdditiveExpression' x (CAdditiveExpression'Sub multExpr addExpr') = do
-  x' <- constIntMultiplicativeExpression $ parseItem multExpr
-  constIntAdditiveExpression' (x - x') (parseItem addExpr')
+evaluateAdditiveExpression' :: Double -> CAdditiveExpression' -> EvaluationResult
+evaluateAdditiveExpression' x CAdditiveExpression'Empty = return x
+evaluateAdditiveExpression' x (CAdditiveExpression'Add multExpr addExpr') = do
+  x' <- evaluateMultiplicativeExpression $ parseItem multExpr
+  evaluateAdditiveExpression' (x + x') (parseItem addExpr')
+evaluateAdditiveExpression' x (CAdditiveExpression'Sub multExpr addExpr') = do
+  x' <- evaluateMultiplicativeExpression $ parseItem multExpr
+  evaluateAdditiveExpression' (x - x') (parseItem addExpr')
 
-constIntMultiplicativeExpression :: CMultiplicativeExpression -> Either Error Int
-constIntMultiplicativeExpression (CMultiplicativeExpression castExpr multExpr') = do
-  x <- constIntCastExpression $ parseItem castExpr
-  constIntMultiplicativeExpression' x $ parseItem multExpr'
+evaluateMultiplicativeExpression :: CMultiplicativeExpression -> EvaluationResult
+evaluateMultiplicativeExpression (CMultiplicativeExpression castExpr multExpr') = do
+  x <- evaluateCastExpression $ parseItem castExpr
+  evaluateMultiplicativeExpression' x $ parseItem multExpr'
 
-constIntMultiplicativeExpression' :: Int -> CMultiplicativeExpression' -> Either Error Int
-constIntMultiplicativeExpression' x CMultiplicativeExpression'Empty = return x
-constIntMultiplicativeExpression' x (CMultiplicativeExpression'Mul castExpr multExpr') = do
-  x' <- constIntCastExpression $ parseItem castExpr
-  constIntMultiplicativeExpression' (x * x') (parseItem multExpr')
-constIntMultiplicativeExpression' x (CMultiplicativeExpression'Div castExpr multExpr') = do
-  x' <- constIntCastExpression $ parseItem castExpr
-  constIntMultiplicativeExpression' (x `div` x') (parseItem multExpr')
-constIntMultiplicativeExpression' x (CMultiplicativeExpression'Mod castExpr multExpr') = do
-  x' <- constIntCastExpression $ parseItem castExpr
-  constIntMultiplicativeExpression' (x `mod` x') (parseItem multExpr')
+evaluateMultiplicativeExpression' :: Double -> CMultiplicativeExpression' -> EvaluationResult
+evaluateMultiplicativeExpression' x CMultiplicativeExpression'Empty = return x
+evaluateMultiplicativeExpression' x (CMultiplicativeExpression'Mul castExpr multExpr') = do
+  x' <- evaluateCastExpression $ parseItem castExpr
+  evaluateMultiplicativeExpression' (x * x') (parseItem multExpr')
+evaluateMultiplicativeExpression' x (CMultiplicativeExpression'Div castExpr multExpr') = do
+  x' <- evaluateCastExpression $ parseItem castExpr
+  ix <- doubleToInteger (parseLoc castExpr) x
+  ix' <- doubleToInteger (parseLoc castExpr) x'
+  evaluateMultiplicativeExpression' (fromIntegral (ix `div` ix')) (parseItem multExpr')
+evaluateMultiplicativeExpression' x (CMultiplicativeExpression'Mod castExpr multExpr') = do
+  x' <- evaluateCastExpression $ parseItem castExpr
+  ix <- doubleToInteger (parseLoc castExpr) x
+  ix' <- doubleToInteger (parseLoc castExpr) x'
+  evaluateMultiplicativeExpression' (fromIntegral (ix `mod` ix')) (parseItem multExpr')
 
-constIntCastExpression :: CCastExpression -> Either Error Int
-constIntCastExpression (CCastExpressionUnary unaryExpr) =
-  constIntUnaryExpression $ parseItem unaryExpr
-constIntCastExpression (CCastExpression i _) =
+evaluateCastExpression :: CCastExpression -> EvaluationResult
+evaluateCastExpression (CCastExpressionUnary unaryExpr) =
+  evaluateUnaryExpression $ parseItem unaryExpr
+evaluateCastExpression (CCastExpression i _) =
   Left $ SyntaxError (parseLoc i) "type cast in a constant expression"
 
-constIntUnaryExpression :: CUnaryExpression -> Either Error Int
-constIntUnaryExpression (CUnaryExpressionPostfix postfixExpr) =
-  constIntPostfixExpression $ parseItem postfixExpr
-constIntUnaryExpression (CUnaryExpressionInc i) =
+evaluateUnaryExpression :: CUnaryExpression -> EvaluationResult
+evaluateUnaryExpression (CUnaryExpressionPostfix postfixExpr) =
+  evaluatePostfixExpression $ parseItem postfixExpr
+evaluateUnaryExpression (CUnaryExpressionInc i) =
   Left $ SyntaxError (parseLoc i) "increment operator in a constant expression"
-constIntUnaryExpression (CUnaryExpressionDec i) =
+evaluateUnaryExpression (CUnaryExpressionDec i) =
   Left $ SyntaxError (parseLoc i) "decrement operator in a constant expression"
-constIntUnaryExpression (CUnaryExpressionUnaryOp op castExpr) =
+evaluateUnaryExpression (CUnaryExpressionUnaryOp op castExpr) =
   case parseItem op of
     CUnaryOperatorAdd ->
-      constIntCastExpression $ parseItem castExpr
+      evaluateCastExpression $ parseItem castExpr
     CUnaryOperatorSub ->
-      negate <$> constIntCastExpression (parseItem castExpr)
-    CUnaryOperatorBitwiseNot ->
-      complement <$> constIntCastExpression (parseItem castExpr)
+      negate <$> evaluateCastExpression (parseItem castExpr)
+    CUnaryOperatorBitwiseNot -> do
+      x <- evaluateCastExpression (parseItem castExpr)
+      ix <- doubleToInteger (parseLoc op) x
+      return . fromIntegral . complement $ ix
     CUnaryOperatorNot -> do
-      x <- constIntCastExpression $ parseItem castExpr
+      x <- evaluateCastExpression $ parseItem castExpr
       if x == 0
         then return 1
         else return 0
@@ -206,53 +234,52 @@ constIntUnaryExpression (CUnaryExpressionUnaryOp op castExpr) =
       Left $ SyntaxError
                (parseLoc op)
                "Illegal operator in a constant expression"
-constIntUnaryExpression (CUnaryExpressionSizeof expr) =
+evaluateUnaryExpression (CUnaryExpressionSizeof expr) =
   Left $ SyntaxError (parseLoc expr) "sizeof operator in a constant expression"
-constIntUnaryExpression (CUnaryExpressionSizeofType typeName) =
+evaluateUnaryExpression (CUnaryExpressionSizeofType typeName) =
   Left $ SyntaxError (parseLoc typeName) "sizeof operator in a constant expression"
 
-constIntPostfixExpression :: CPostfixExpression -> Either Error Int
-constIntPostfixExpression (CPostfixExpression primaryExpr postfixExpr') = do
-  x <- constIntPrimaryExpression $ parseItem primaryExpr
-  constIntPostfixExpression' (parseLoc postfixExpr') x $ parseItem postfixExpr'
+evaluatePostfixExpression :: CPostfixExpression -> EvaluationResult
+evaluatePostfixExpression (CPostfixExpression primaryExpr postfixExpr') = do
+  x <- evaluatePrimaryExpression $ parseItem primaryExpr
+  evaluatePostfixExpression' (parseLoc postfixExpr') x $ parseItem postfixExpr'
 
-constIntPostfixExpression' :: Coordinates -> Int -> CPostfixExpression' -> Either Error Int
-constIntPostfixExpression' _ x CPostfixExpression'Empty = return x
-constIntPostfixExpression' c _ _ =
+evaluatePostfixExpression' :: Coordinates -> Double -> CPostfixExpression' -> EvaluationResult
+evaluatePostfixExpression' _ x CPostfixExpression'Empty = return x
+evaluatePostfixExpression' c _ _ =
   Left $ SyntaxError c "Illegal operator in a constant expression"
 
-constIntPrimaryExpression :: CPrimaryExpression -> Either Error Int
-constIntPrimaryExpression (CPrimaryExpressionId i) =
+evaluatePrimaryExpression :: CPrimaryExpression -> EvaluationResult
+evaluatePrimaryExpression (CPrimaryExpressionId i) =
   Left $ SyntaxError (parseLoc i) "variable name in a constant expression"
-constIntPrimaryExpression (CPrimaryExpressionString s) =
+evaluatePrimaryExpression (CPrimaryExpressionString s) =
   Left $ SyntaxError (parseLoc s) "string literal in a constant expression"
-constIntPrimaryExpression (CPrimaryExpressionParen expr) =
-  constIntExpression $ parseItem expr
-constIntPrimaryExpression (CPrimaryExpressionConst c) =
-  constIntConstant $ parseItem c
+evaluatePrimaryExpression (CPrimaryExpressionParen expr) =
+  evaluateExpression $ parseItem expr
+evaluatePrimaryExpression (CPrimaryExpressionConst c) =
+  evaluateConstant $ parseItem c
 
-constIntConstant :: CConstant -> Either Error Int
-constIntConstant (CConstantInt i) = return $ parseItem i
-constIntConstant (CConstantChar c) = return $ ord $ parseItem c
-constIntConstant (CConstantFloat f) =
-  Left $ SyntaxError (parseLoc f) "float literal in an integer expression"
-constIntConstant (CConstantEnum e) =
+evaluateConstant :: CConstant -> EvaluationResult
+evaluateConstant (CConstantInt i) = return . fromIntegral . parseItem $ i
+evaluateConstant (CConstantChar c) = return . fromIntegral . ord . parseItem $ c
+evaluateConstant (CConstantFloat f) = return $ parseItem f
+evaluateConstant (CConstantEnum e) =
   Left $ SyntaxError (parseLoc e) "enum value in an integer expression"
 
-constIntExpression :: CExpression -> Either Error Int
-constIntExpression (CExpression assignmentExpr expr') = do
-  x <- constIntAssignmentExpression $ parseItem assignmentExpr
-  constIntExpression' x $ parseItem expr'
+evaluateExpression :: CExpression -> EvaluationResult
+evaluateExpression (CExpression assignmentExpr expr') = do
+  x <- evaluateAssignmentExpression $ parseItem assignmentExpr
+  evaluateExpression' x $ parseItem expr'
 
-constIntExpression' :: Int -> CExpression' -> Either Error Int
-constIntExpression' x CExpression'Empty = return x
-constIntExpression' _ (CExpression' i _) =
+evaluateExpression' :: Double -> CExpression' -> EvaluationResult
+evaluateExpression' x CExpression'Empty = return x
+evaluateExpression' _ (CExpression' i _) =
   Left $ SyntaxError (parseLoc i) "comma in a constant expression"
 
-constIntAssignmentExpression :: CAssignmentExpression -> Either Error Int
-constIntAssignmentExpression (CAssignmentExpressionConditional condExpr) =
-  constIntConditionalExpression $ parseItem condExpr
-constIntAssignmentExpression (CAssignmentExpression i _ _) =
+evaluateAssignmentExpression :: CAssignmentExpression -> EvaluationResult
+evaluateAssignmentExpression (CAssignmentExpressionConditional condExpr) =
+  evaluateConditionalExpression $ parseItem condExpr
+evaluateAssignmentExpression (CAssignmentExpression i _ _) =
   Left $ SyntaxError (parseLoc i) "assignment in a constant expression"
 
 
