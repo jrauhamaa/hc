@@ -2,11 +2,11 @@ module ParseItem where
 
 import qualified Data.Map as M
 
-import Utils (Coordinates, SymbolTable(..))
+import Utils (Location, SymbolTable(..))
 
 data ParseItem a =
   ParseItem
-    { parseLoc :: Coordinates
+    { parseLoc :: Location
     , parseItem :: a
     , symbolTable :: SymbolTable
     }
@@ -31,7 +31,7 @@ instance Functor ParseItem where
       }
 
 instance Applicative ParseItem where
-  pure a = ParseItem (1, 1) a initialSymbols
+  pure a = ParseItem ("", (1, 1)) a initialSymbols
   (ParseItem l fab sym) <*> (ParseItem _ a _) =
     ParseItem
       { parseLoc = l

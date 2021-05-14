@@ -6,7 +6,7 @@ import Data.Maybe (isNothing)
 
 import ParseItem
 import Utils ( Error(..)
-             , Coordinates
+             , Location
              , DataType(..)
              , SymbolTable(..)
              , CType(..)
@@ -45,7 +45,7 @@ childSymbols sym =
     }
 
 checkCollisionStructured ::
-     Coordinates -> String -> SymbolTable -> Either Error ()
+     Location -> String -> SymbolTable -> Either Error ()
 checkCollisionStructured c s sym =
   if isNothing structs'
      && isNothing enums'
@@ -57,7 +57,7 @@ checkCollisionStructured c s sym =
     enums' = M.lookup s $ enums sym
     unions' = M.lookup s $ unions sym
 
-checkCollision :: Coordinates -> String -> SymbolTable -> Either Error ()
+checkCollision :: Location -> String -> SymbolTable -> Either Error ()
 checkCollision c s sym =
   if isNothing typedef'
      && isNothing labels'
@@ -73,7 +73,7 @@ addTypedef ::
      String
   -> CType
   -> SymbolTable
-  -> Coordinates
+  -> Location
   -> Either Error SymbolTable
 addTypedef label t sym@SymbolTable { typedef = symTable } c = do
   checkCollision c label sym
@@ -83,7 +83,7 @@ addSymbol ::
      String
   -> CType
   -> SymbolTable
-  -> Coordinates
+  -> Location
   -> Either Error SymbolTable
 addSymbol label t sym@SymbolTable { symbols = symTable } c = do
   checkCollision c label sym
@@ -93,7 +93,7 @@ addEnum ::
      String
   -> CType
   -> SymbolTable
-  -> Coordinates
+  -> Location
   -> Either Error SymbolTable
 addEnum label t sym@SymbolTable { enums = enumTable } c = do
   checkCollisionStructured c label sym
@@ -103,7 +103,7 @@ addStruct ::
      String
   -> CType
   -> SymbolTable
-  -> Coordinates
+  -> Location
   -> Either Error SymbolTable
 addStruct label t sym@SymbolTable { structs = structTable } c = do
   checkCollisionStructured c label sym
@@ -113,7 +113,7 @@ addUnion ::
      String
   -> CType
   -> SymbolTable
-  -> Coordinates
+  -> Location
   -> Either Error SymbolTable
 addUnion label t sym@SymbolTable { unions = unionTable } c = do
   checkCollisionStructured c label sym
@@ -121,7 +121,7 @@ addUnion label t sym@SymbolTable { unions = unionTable } c = do
 
 addLabel ::
      String
-  -> Coordinates
+  -> Location
   -> SymbolTable
   -> Either Error SymbolTable
 addLabel label c sym@SymbolTable { labels = labelTable } = do

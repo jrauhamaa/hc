@@ -26,10 +26,10 @@ testFullSourceFile = do
         describe "scanCCode" $ do
           context "when given valid input" $ do
             it "scans a c source file" $ do
-              scanCCode contents `shouldSatisfy` isRight
+              scanCCode "" contents `shouldSatisfy` isRight
 
             it "produces ScanElements with correct scanStr" $ do
-              (concatMap scanStr <$> scanCCode contents)
+              (concatMap scanStr <$> scanCCode "" contents)
                 `shouldBe` Right contents
 
 testGoodInput :: Spec
@@ -50,7 +50,7 @@ testGoodInput =
                              , LUnsigned, LSigned, LShort, LLong
                              , LSizeof, LLabel "label", LEndMarker
                              ]
-            results = scanCCode keywordInput
+            results = scanCCode "" keywordInput
         results `shouldSatisfy` isRight
         (filter (/= LWhiteSpace) . map scanItem <$> results) `shouldBe` Right expectedResult
 
@@ -63,27 +63,27 @@ testGoodInput =
                        , LPPElse, LPPEndif, LPPEmpty, LPPConcat
                        , LLabel "define", LLabel "ififif", LEndMarker
                        ]
-            results = scanCCode input
+            results = scanCCode "" input
         results `shouldSatisfy` isRight
         (filter (/= LWhiteSpace) . map scanItem <$> results) `shouldBe` Right expected
 
       it "recognizes integer constants" $ do
         (filter (/= LWhiteSpace) . map scanItem
-         <$> scanCLine (0, 0) "8 8u 8l 8lu 8ul 010 0x8")
+         <$> scanCLine ("", (0, 0)) "8 8u 8l 8lu 8ul 010 0x8")
          `shouldBe` Right (replicate 7 (LIntLiteral 8))
 
       it "recognizes char constants" $ do
         (filter (/= LWhiteSpace) . map scanItem
-         <$> scanCLine (0, 0) "'a' L'a' ' ' '\\t' '\\\\' '\\n' '\\''")
+         <$> scanCLine ("", (0, 0)) "'a' L'a' ' ' '\\t' '\\\\' '\\n' '\\''")
          `shouldBe` Right (map LCharLiteral ['a', 'a', ' ', '\t', '\\', '\n', '\''])
 
       it "recognizes float constants" $ do
         (filter (/= LWhiteSpace) . map scanItem
-         <$> scanCLine (0, 0) "1. -.1 1.1 1.1f 1f 1fl 1lf -5e2 5e-2")
+         <$> scanCLine ("", (0, 0)) "1. -.1 1.1 1.1f 1f 1fl 1lf -5e2 5e-2")
          `shouldBe` Right (map LFloatLiteral [1.0, -0.1, 1.1, 1.1, 1.0, 1.0, 1.0, -500.0, 0.05])
 
       it "recognizes string literals" $ do
-        (map scanItem <$> scanCLine (0, 0) "\"foo \\\\ \\n \\t \\\"\"")
+        (map scanItem <$> scanCLine ("", (0, 0)) "\"foo \\\\ \\n \\t \\\"\"")
          `shouldBe` Right [LStringLiteral "foo \\ \n \t \""]
 
 testBadInput :: Spec
@@ -91,10 +91,10 @@ testBadInput =
   describe "scanCCode" $ do
     context "when given bad input" $ do
       it "doesn't accept empty source file" $ do
-        scanCCode "" `shouldSatisfy` isLeft
+        scanCCode "" "" `shouldSatisfy` isLeft
 
 
       it "doesn't accept unterminated string" $ do
-        scanCCode "\"unterminated string" `shouldSatisfy` isLeft
+        scanCCode "" "\"unterminated string" `shouldSatisfy` isLeft
 
 

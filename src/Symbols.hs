@@ -7,7 +7,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 
 import ParseItem
-import Utils ( Coordinates
+import Utils ( Location
              , Error(..)
              , DataType(..)
              , StorageClass(..)
@@ -19,9 +19,9 @@ import Utils ( Coordinates
 data TypeCheckItem a =
   TypeCheckItem
     { typeCheckSymbols   :: SymbolTable  -- for checking for existence of typedef / union / struct
-    , previousType  :: CType        -- for passing partially constructed type
-    , typeCheckItem :: a            -- an item in the parse tree
-    , typeCheckLoc  :: Coordinates  -- coordinates for possible error message
+    , previousType  :: CType             -- for passing partially constructed type
+    , typeCheckItem :: a                 -- an item in the parse tree
+    , typeCheckLoc  :: Location          -- coordinates for possible error message
     }
 
 type TypeReader a b = TypeCheckItem a -> Either Error b
@@ -522,7 +522,7 @@ readParamTypes
   paramList <- readParamList $ updateTCItem item list
   return (parseItem varargs /= CVarArgsOptionalEmpty, paramList)
 
-validateFunctionReturnType :: Coordinates -> CType -> Either Error ()
+validateFunctionReturnType :: Location -> CType -> Either Error ()
 validateFunctionReturnType c t =
   case dataType t of
     TFunction {} -> Left $ TypeError c "invalid function return type"

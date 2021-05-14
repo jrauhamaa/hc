@@ -27,12 +27,13 @@ testFullSourceFile = do
         describe "parseCCode" $ do
           context "when given valid input" $ do
             it "parses a c source file" $ do
-              (scanCCode contents >>= parseCCode . filterWhiteSpace) `shouldSatisfy` isRight
+              -- drop first 6 tokens (an include directive)
+              (scanCCode "" contents >>= parseCCode . drop 6 . filterWhiteSpace ) `shouldSatisfy` isRight
 
 unterminatedBlock :: [ScanItem CLexeme]
 unterminatedBlock =
   map
-   (\item -> ScanItem { scanLoc = (0, 0), scanStr = "", scanItem = item })
+   (\item -> ScanItem { scanLoc = ("", (0, 0)), scanStr = "", scanItem = item })
    [ LBraceOpen
    , LReturn
    , LIntLiteral 0
@@ -44,7 +45,7 @@ testBadInput =
   describe "parseCCode" $ do
     context "when given bad input" $ do
       it "doesn't accept empty source file" $ do
-        parseCCode [ScanItem { scanLoc = (0, 0), scanStr = "", scanItem = LEndMarker }]
+        parseCCode [ScanItem { scanLoc = ("", (0, 0)), scanStr = "", scanItem = LEndMarker }]
           `shouldSatisfy` isLeft
 
       it "doesn't accept unterminated block expression" $ do
@@ -53,7 +54,7 @@ testBadInput =
 testDeclarationInput :: [ScanItem CLexeme]
 testDeclarationInput =
   map
-   (\item -> ScanItem { scanLoc = (0, 0), scanStr = "", scanItem = item })
+   (\item -> ScanItem { scanLoc = ("", (0, 0)), scanStr = "", scanItem = item })
    [ LLabel "typedefname"
    , LLabel "variablename"
    , LSemiColon
@@ -62,7 +63,7 @@ testDeclarationInput =
 pItem :: ParseItem Int
 pItem =
   ParseItem
-    { parseLoc = (0, 0)
+    { parseLoc = ("", (0, 0))
     , symbolTable = initialSymbols
     , parseItem = 1
     }
@@ -116,7 +117,7 @@ testGoodInput =
         runParser
           cCompoundStatementP
           (unterminatedBlock ++
-            [ScanItem { scanLoc = (0, 0)
+            [ScanItem { scanLoc = ("", (0, 0))
                       , scanStr = ""
                       , scanItem = LBraceClose }])
           `shouldSatisfy` isRight

@@ -11,7 +11,7 @@ import Control.Applicative
 
 import Lexeme (CLexeme(..))
 import ParseItem
-import Utils (Coordinates, Error(..), errorLoc)
+import Utils (Location, Error(..), errorLoc)
 import Scanner (ScanItem(..))
 
 -----------
@@ -38,7 +38,7 @@ instance Applicative Parser where
       return (parsed <> parsed', notParsed', fab a)
 
 instance Alternative Parser where
-  empty = Parser $ \_ -> Left $ ParseError (0, 0) "Error"
+  empty = Parser $ \_ -> Left $ ParseError ("", (0, 0)) "Error"
   p1 <|> p2 = Parser $ \input ->
     case runParser p1 input of
       r@(Right _) -> r
@@ -71,9 +71,9 @@ parserToPIParser p =
       return (parsed, notParsed, ParseItem c a initialSymbols)
 
 unexpectedEof :: Error
-unexpectedEof = ParseError (0, 0) "Unexpected EOF"
+unexpectedEof = ParseError ("", (0, 0)) "Unexpected EOF"
 
-unexpectedLexeme :: Coordinates -> String -> String -> Error
+unexpectedLexeme :: Location -> String -> String -> Error
 unexpectedLexeme c expected encountered =
   ParseError c $
   mconcat ["Expected ", expected, ". Instead encountered ", encountered, "."]
@@ -83,7 +83,7 @@ unexpectedLexeme c expected encountered =
 ------------------------
 
 failingP :: Parser a
-failingP = Parser $ \_ -> Left $ ParseError (0, 0) "Error"
+failingP = Parser $ \_ -> Left $ ParseError ("", (0, 0)) "Error"
 
 singleP :: CLexeme -> Parser CLexeme
 singleP l =
@@ -171,12 +171,12 @@ afterP before after =
       Parser $ \input ->
         let (begin, end) = splitAt n input
         in
-          case runParser before $ begin <> [ScanItem (0, 0) "" LEndMarker] of
+          case runParser before $ begin <> [ScanItem ("", (0, 0)) "" LEndMarker] of
             Right (_, [ScanItem _ _ LEndMarker], e) ->
               case runParser after end of
                 Right _ -> Right (begin, end, e)
-                _ -> Left $ ParseError (0, 0) "Error"
-            _ -> Left $ ParseError (0, 0) "Error"
+                _ -> Left $ ParseError ("", (0, 0)) "Error"
+            _ -> Left $ ParseError ("", (0, 0)) "Error"
 
 ---------------
 -- C PARSERS --

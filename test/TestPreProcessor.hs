@@ -40,7 +40,7 @@ testLineSplice =
       lineSplice input `shouldBe` expected
 
 makeScanItem :: CLexeme -> ScanItem CLexeme
-makeScanItem item = ScanItem { scanLoc = (0, 0), scanStr = "", scanItem = item }
+makeScanItem item = ScanItem { scanLoc = ("", (0, 0)), scanStr = "", scanItem = item }
 
 testRemoveComments :: Spec
 testRemoveComments =
@@ -98,9 +98,9 @@ testParsers =
 
       it "parses define directives" $ do
         let inputLine =
-              [ ScanItem { scanLoc = (0, 0), scanStr = "#define ", scanItem = LPPDefine }
-              , ScanItem { scanLoc = (0, 0), scanStr = "VARNAME ", scanItem = LLabel "VARNAME" }
-              , ScanItem { scanLoc = (0, 0), scanStr = "1", scanItem = LIntLiteral 1 }
+              [ ScanItem { scanLoc = ("", (0, 0)), scanStr = "#define ", scanItem = LPPDefine }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "VARNAME ", scanItem = LLabel "VARNAME" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "1", scanItem = LIntLiteral 1 }
               ]
             expected = PPTranslationUnit
                          [ PPSourceLineDirective
@@ -113,20 +113,20 @@ testParsers =
       it "parses macros" $ do
         let inputLine =
               -- #define VARNAME(a, b) (a) + (b)
-              [ ScanItem { scanLoc = (0, 0), scanStr = "#define ", scanItem = LPPDefine }
-              , ScanItem { scanLoc = (0, 0), scanStr = "VARNAME", scanItem = LLabel "VARNAME" }
-              , ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
-              , ScanItem { scanLoc = (0, 0), scanStr = "a", scanItem = LLabel "a" }
-              , ScanItem { scanLoc = (0, 0), scanStr = ", ", scanItem = LComma }
-              , ScanItem { scanLoc = (0, 0), scanStr = "b", scanItem = LLabel "b" }
-              , ScanItem { scanLoc = (0, 0), scanStr = ") ", scanItem = LParenthesisClose }
-              , ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
-              , ScanItem { scanLoc = (0, 0), scanStr = "a", scanItem = LLabel "a" }
-              , ScanItem { scanLoc = (0, 0), scanStr = ") ", scanItem = LParenthesisClose }
-              , ScanItem { scanLoc = (0, 0), scanStr = "+ ", scanItem = LPlus }
-              , ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
-              , ScanItem { scanLoc = (0, 0), scanStr = "b", scanItem = LLabel "a" }
-              , ScanItem { scanLoc = (0, 0), scanStr = ")", scanItem = LParenthesisClose }
+              [ ScanItem { scanLoc = ("", (0, 0)), scanStr = "#define ", scanItem = LPPDefine }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "VARNAME", scanItem = LLabel "VARNAME" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "a", scanItem = LLabel "a" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = ", ", scanItem = LComma }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "b", scanItem = LLabel "b" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = ") ", scanItem = LParenthesisClose }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "a", scanItem = LLabel "a" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = ") ", scanItem = LParenthesisClose }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "+ ", scanItem = LPlus }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "b", scanItem = LLabel "a" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = ")", scanItem = LParenthesisClose }
               ]
             expected = PPTranslationUnit
                          [ PPSourceLineDirective
@@ -148,7 +148,7 @@ testParsers =
               , "return 3;"
               , "#endif"
               ]
-            inputItems = traverse (scanCLineNoWS (0, 0)) inputLines
+            inputItems = traverse (scanCLineNoWS ("", (0, 0))) inputLines
             expected = do
               inputItems' <- inputItems
               return $ PPTranslationUnit
@@ -198,19 +198,19 @@ testParsers =
       it "discards bad macro definitions" $ do
         let inputLine =
               -- #define VARNAME(a, b (a) + (b)
-              [ ScanItem { scanLoc = (0, 0), scanStr = "#define ", scanItem = LPPDefine }
-              , ScanItem { scanLoc = (0, 0), scanStr = "VARNAME", scanItem = LLabel "VARNAME" }
-              , ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
-              , ScanItem { scanLoc = (0, 0), scanStr = "a", scanItem = LLabel "a" }
-              , ScanItem { scanLoc = (0, 0), scanStr = ", ", scanItem = LComma }
-              , ScanItem { scanLoc = (0, 0), scanStr = "b ", scanItem = LLabel "b" }
-              , ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
-              , ScanItem { scanLoc = (0, 0), scanStr = "a", scanItem = LLabel "a" }
-              , ScanItem { scanLoc = (0, 0), scanStr = ") ", scanItem = LParenthesisClose }
-              , ScanItem { scanLoc = (0, 0), scanStr = "+ ", scanItem = LPlus }
-              , ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
-              , ScanItem { scanLoc = (0, 0), scanStr = "b", scanItem = LLabel "a" }
-              , ScanItem { scanLoc = (0, 0), scanStr = ")", scanItem = LParenthesisClose }
+              [ ScanItem { scanLoc = ("", (0, 0)), scanStr = "#define ", scanItem = LPPDefine }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "VARNAME", scanItem = LLabel "VARNAME" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "a", scanItem = LLabel "a" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = ", ", scanItem = LComma }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "b ", scanItem = LLabel "b" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "a", scanItem = LLabel "a" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = ") ", scanItem = LParenthesisClose }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "+ ", scanItem = LPlus }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "b", scanItem = LLabel "a" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = ")", scanItem = LParenthesisClose }
               ]
         runPPParser translationUnitParser [inputLine]
           `shouldSatisfy` isLeft
@@ -229,8 +229,8 @@ testConcatTokens =
     it "replaces macro constans with relevant values" $ do
       let sourceCode      = "int foo ## bar = 1;"
           transformedCode = "int foobar = 1;"
-      (scanCLineNoWS (0, 0) sourceCode >>= concatTokens)
-        `shouldBe` scanCLineNoWS (0, 0) transformedCode
+      (scanCLineNoWS ("", (0, 0)) sourceCode >>= concatTokens)
+        `shouldBe` scanCLineNoWS ("", (0, 0)) transformedCode
 
 testMacroTransform :: Spec
 testMacroTransform =
@@ -239,8 +239,8 @@ testMacroTransform =
       let macroDict       = M.singleton "PI" $ MacroConstant "3.14"
           sourceCode      = "int area(int r) { return PI * r * r; }"
           transformedCode = "int area(int r) { return 3.14 * r * r; }"
-      (scanCLineNoWS (0, 0) sourceCode >>= macroTransform (0, 0) macroDict)
-        `shouldBe` scanCLineNoWS (0, 0) transformedCode
+      (scanCLineNoWS ("", (0, 0)) sourceCode >>= macroTransform ("", (0, 0)) macroDict)
+        `shouldBe` scanCLineNoWS ("", (0, 0)) transformedCode
 
     it "replaces macro function invocations with relevant values" $ do
       let macroDict =
@@ -250,24 +250,24 @@ testMacroTransform =
                 , MacroFunction
                     ["r"]
                     -- (PI * (r) * (r))
-                    [ ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
-                    , ScanItem { scanLoc = (0, 0), scanStr = "PI ", scanItem = LLabel "PI" }
-                    , ScanItem { scanLoc = (0, 0), scanStr = "* ", scanItem = LStar }
-                    , ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
-                    , ScanItem { scanLoc = (0, 0), scanStr = "r", scanItem = LLabel "r" }
-                    , ScanItem { scanLoc = (0, 0), scanStr = ") ", scanItem = LParenthesisClose }
-                    , ScanItem { scanLoc = (0, 0), scanStr = "* ", scanItem = LStar }
-                    , ScanItem { scanLoc = (0, 0), scanStr = "(", scanItem = LParenthesisOpen }
-                    , ScanItem { scanLoc = (0, 0), scanStr = "r", scanItem = LLabel "r" }
-                    , ScanItem { scanLoc = (0, 0), scanStr = ")", scanItem = LParenthesisClose }
-                    , ScanItem { scanLoc = (0, 0), scanStr = ")", scanItem = LParenthesisClose }
+                    [ ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
+                    , ScanItem { scanLoc = ("", (0, 0)), scanStr = "PI ", scanItem = LLabel "PI" }
+                    , ScanItem { scanLoc = ("", (0, 0)), scanStr = "* ", scanItem = LStar }
+                    , ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
+                    , ScanItem { scanLoc = ("", (0, 0)), scanStr = "r", scanItem = LLabel "r" }
+                    , ScanItem { scanLoc = ("", (0, 0)), scanStr = ") ", scanItem = LParenthesisClose }
+                    , ScanItem { scanLoc = ("", (0, 0)), scanStr = "* ", scanItem = LStar }
+                    , ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
+                    , ScanItem { scanLoc = ("", (0, 0)), scanStr = "r", scanItem = LLabel "r" }
+                    , ScanItem { scanLoc = ("", (0, 0)), scanStr = ")", scanItem = LParenthesisClose }
+                    , ScanItem { scanLoc = ("", (0, 0)), scanStr = ")", scanItem = LParenthesisClose }
                     ]
                 )
               ]
           sourceCode      = "int area = AREA(x+y);"
           transformedCode = "int area = (3.14 * (x+y) * (x+y));"
-      (scanCLineNoWS (0, 0) sourceCode >>= macroTransform (0, 0) macroDict)
-        `shouldBe` scanCLineNoWS (0, 0) transformedCode
+      (scanCLineNoWS ("", (0, 0)) sourceCode >>= macroTransform ("", (0, 0)) macroDict)
+        `shouldBe` scanCLineNoWS ("", (0, 0)) transformedCode
 
     it "it re-expands macros containing macro values" $ do
       let macroDict =
@@ -277,8 +277,8 @@ testMacroTransform =
               ]
           sourceCode      = "int x = DOUBLEPI;"
           transformedCode = "int x = 2*3.14;"
-      (scanCLineNoWS (0, 0) sourceCode >>= macroTransform (0, 0) macroDict)
-        `shouldBe` scanCLineNoWS (0, 0) transformedCode
+      (scanCLineNoWS ("", (0, 0)) sourceCode >>= macroTransform ("", (0, 0)) macroDict)
+        `shouldBe` scanCLineNoWS ("", (0, 0)) transformedCode
 
 testPPTransform :: Spec
 testPPTransform = do
@@ -287,18 +287,18 @@ testPPTransform = do
       result <- ppTransformError
                   (Context "" 0 M.empty)
                   (PPErrorMacro
-                    [ScanItem (0, 1) "errorMessage" $ LLabel "errorMessage"])
-      result `shouldBe` Left (PreProcessError (0, 1) "errorMessage")
+                    [ScanItem ("", (0, 1)) "errorMessage" $ LLabel "errorMessage"])
+      result `shouldBe` Left (PreProcessError ("", (0, 1)) "errorMessage")
 
   describe "ppTransformLine" $ do
     it "sets the line number and file name" $ do
       result <- ppTransformLine
                   (Context "" 0 M.empty)
                   (PPLineMacro
-                    [ ScanItem (0, 1) "10 " $ LIntLiteral 10
-                    , ScanItem (0, 4) "foo" $ LLabel "foo"
-                    , ScanItem (0, 7) "." LDot
-                    , ScanItem (0, 8) "h" $ LLabel "h"
+                    [ ScanItem ("", (0, 1)) "10 " $ LIntLiteral 10
+                    , ScanItem ("", (0, 4)) "foo" $ LLabel "foo"
+                    , ScanItem ("", (0, 7)) "." LDot
+                    , ScanItem ("", (0, 8)) "h" $ LLabel "h"
                     ])
       result `shouldBe` Right (Context "foo.h" 11 M.empty, [])
 
@@ -315,13 +315,13 @@ testPPTransform = do
                     , ( "MAKEVARNAME"
                       , MacroFunction
                           ["name"]
-                          [ ScanItem { scanLoc = (3, 27)
+                          [ ScanItem { scanLoc = ("test/pptest.h", (3, 27))
                                      , scanStr = "VARPREFIX "
                                      , scanItem = LLabel "VARPREFIX" }
-                          , ScanItem { scanLoc = (3, 37)
+                          , ScanItem { scanLoc = ("test/pptest.h", (3, 37))
                                      , scanStr = "## "
                                      , scanItem = LPPConcat }
-                          , ScanItem { scanLoc = (3, 40)
+                          , ScanItem { scanLoc = ("test/pptest.h", (3, 40))
                                      , scanStr = "name"
                                      , scanItem = LLabel "name" }
                           ]
@@ -344,23 +344,23 @@ testPreTransform = do
                     , "int foo = 1; /* another comment */"
                     ]
           expected =
-            [ [ ScanItem { scanLoc = (1, 1), scanStr = "#include ", scanItem = LPPInclude }
-              , ScanItem { scanLoc = (1, 10), scanStr = "<", scanItem = LLT }
-              , ScanItem { scanLoc = (1, 11), scanStr = "stdio", scanItem = LLabel "stdio" }
-              , ScanItem { scanLoc = (1, 16), scanStr = ".", scanItem = LDot }
-              , ScanItem { scanLoc = (1, 17), scanStr = "h", scanItem = LLabel "h" }
-              , ScanItem { scanLoc = (1, 18), scanStr = ">", scanItem = LGT }
+            [ [ ScanItem { scanLoc = ("", (1, 1)), scanStr = "#include ", scanItem = LPPInclude }
+              , ScanItem { scanLoc = ("", (1, 10)), scanStr = "<", scanItem = LLT }
+              , ScanItem { scanLoc = ("", (1, 11)), scanStr = "stdio", scanItem = LLabel "stdio" }
+              , ScanItem { scanLoc = ("", (1, 16)), scanStr = ".", scanItem = LDot }
+              , ScanItem { scanLoc = ("", (1, 17)), scanStr = "h", scanItem = LLabel "h" }
+              , ScanItem { scanLoc = ("", (1, 18)), scanStr = ">", scanItem = LGT }
               ]
             , []
-            , [ ScanItem { scanLoc = (3, 1), scanStr = "int ", scanItem = LInt }
-              , ScanItem { scanLoc = (3, 5), scanStr = "foo ", scanItem = LLabel "foo" }
-              , ScanItem { scanLoc = (3, 9), scanStr = "= ", scanItem = LAssign }
-              , ScanItem { scanLoc = (3, 11), scanStr = "1", scanItem = LIntLiteral 1 }
-              , ScanItem { scanLoc = (3, 12), scanStr = ";  ", scanItem = LSemiColon }
+            , [ ScanItem { scanLoc = ("", (3, 1)), scanStr = "int ", scanItem = LInt }
+              , ScanItem { scanLoc = ("", (3, 5)), scanStr = "foo ", scanItem = LLabel "foo" }
+              , ScanItem { scanLoc = ("", (3, 9)), scanStr = "= ", scanItem = LAssign }
+              , ScanItem { scanLoc = ("", (3, 11)), scanStr = "1", scanItem = LIntLiteral 1 }
+              , ScanItem { scanLoc = ("", (3, 12)), scanStr = ";  ", scanItem = LSemiColon }
               ]
             ]
 
-      preTransform sourceCode `shouldBe` Right expected
+      preTransform "" sourceCode `shouldBe` Right expected
 
 testPreProcessCode :: IO ()
 testPreProcessCode = do

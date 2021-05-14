@@ -4,11 +4,11 @@ import Data.Bits (xor, (.&.), (.|.), shiftL, shiftR, complement)
 import Data.Char (ord)
 
 import ParseItem
-import Utils
+import Utils (Location, Error(..))
 
 type EvaluationResult = Either Error Double
 
-doubleToInteger :: Coordinates -> Double -> Either Error Int
+doubleToInteger :: Location -> Double -> Either Error Int
 doubleToInteger c x =
   if fromIntegral (floor x :: Int) == x
     then return $ floor x
@@ -244,7 +244,7 @@ evaluatePostfixExpression (CPostfixExpression primaryExpr postfixExpr') = do
   x <- evaluatePrimaryExpression $ parseItem primaryExpr
   evaluatePostfixExpression' (parseLoc postfixExpr') x $ parseItem postfixExpr'
 
-evaluatePostfixExpression' :: Coordinates -> Double -> CPostfixExpression' -> EvaluationResult
+evaluatePostfixExpression' :: Location -> Double -> CPostfixExpression' -> EvaluationResult
 evaluatePostfixExpression' _ x CPostfixExpression'Empty = return x
 evaluatePostfixExpression' c _ _ =
   Left $ SyntaxError c "Illegal operator in a constant expression"

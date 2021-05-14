@@ -8,7 +8,7 @@ import Data.Char
 import Numeric
 
 import Lexeme (CLexeme(..))
-import Utils (Coordinates, Error(..))
+import Utils (Filename, Location, Error(..))
 
 -----------
 -- TYPES --
@@ -16,13 +16,13 @@ import Utils (Coordinates, Error(..))
 
 data ScanItem a =
   ScanItem
-    { scanLoc :: Coordinates
+    { scanLoc :: Location
     , scanStr :: String
     , scanItem :: a
     }
   deriving (Show, Eq)
 
-type Input = (Coordinates, String)
+type Input = (Location, String)
 
 newtype Scanner a =
   Scanner
@@ -38,7 +38,7 @@ instance Functor ScanItem where
       }
 
 instance Applicative ScanItem where
-  pure a = ScanItem (1, 1) "" a
+  pure a = ScanItem ("", (1, 1)) "" a
   seab <*> sea =
     ScanItem
       { scanLoc = scanLoc seab
@@ -67,7 +67,7 @@ instance Alternative Scanner where
           case s2 input of
             Left _ -> scan1
             scan2@(Right (_, item2)) ->
-              if scanStr item1 >= scanStr item2
+              if length (scanStr item1) >= length (scanStr item2)
                 then scan1
                 else scan2
 
@@ -75,7 +75,7 @@ instance Alternative Scanner where
 -- MAIN SCANNER --
 ------------------
 
-scanCLine :: Coordinates -> String -> Either Error [ScanItem CLexeme]
+scanCLine :: Location -> String -> Either Error [ScanItem CLexeme]
 scanCLine _ [] = return []
 scanCLine c input =
   case runScanner cScanner (c, input) of
@@ -87,8 +87,8 @@ scanCLine c input =
           lineTail <- scanCLine c' input'
           return $ se : lineTail
 
-scanCCode :: String -> Either Error [ScanItem CLexeme]
-scanCCode input = scanCCode' [] ((1, 1), input)
+scanCCode :: Filename -> String -> Either Error [ScanItem CLexeme]
+scanCCode fName input = scanCCode' [] ((fName, (1, 1)), input)
 
 scanCCode' ::
      [ScanItem CLexeme] -> Input -> Either Error [ScanItem CLexeme]
@@ -97,7 +97,7 @@ scanCCode' scanned input =
     Left e -> Left e
     Right (input', se) ->
       if snd input' == ""
-        then Right $ scanned <> [se, ScanItem (0, 0) "" LEndMarker]
+        then Right $ scanned <> [se, ScanItem ("", (0, 0)) "" LEndMarker]
         else scanCCode' (scanned <> [se]) input'
 
 toFilter :: [CLexeme]
@@ -235,10 +235,11 @@ cScanner
 -----------
 -- UTILS --
 -----------
-emptyInputError :: Coordinates -> Error
+
+emptyInputError :: Location -> Error
 emptyInputError location = ScanError location "Unexpected end of input"
 
-unexpectedInputError :: String -> String -> Coordinates -> Error
+unexpectedInputError :: String -> String -> Location -> Error
 unexpectedInputError expected encountered location =
   ScanError location $
   mconcat
@@ -249,9 +250,9 @@ unexpectedInputError expected encountered location =
     , "' instead."
     ]
 
-nextLoc :: Char -> Coordinates -> Coordinates
-nextLoc '\n' l = (fst l + 1, 1)
-nextLoc _ l = (fst l, snd l + 1)
+nextLoc :: Char -> Location -> Location
+nextLoc '\n' (fName, (r, _)) = (fName, (r + 1, 1))
+nextLoc _ (fName, (r, c)) = (fName, (r, c + 1))
 
 charSIgnoreCase :: Char -> Scanner Char
 charSIgnoreCase c =

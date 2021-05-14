@@ -4,6 +4,12 @@ module Utils where
 import Control.Applicative
 import qualified Data.Map as M
 
+type Row = Int
+type Col = Int
+type Coordinates = (Row, Col)
+type Filename = String
+type Location = (Filename, Coordinates)
+
 data DataType
   = TChar
   | TShort          -- int or short int
@@ -15,8 +21,7 @@ data DataType
   | TULongLong
   | TFloat
   | TDouble
-  | TLongDouble
-  | TPointer CType
+  | TLongDouble | TPointer CType
   | TArray CType (Maybe Int)
   | TUnion (Maybe String) (M.Map String CType)
   | TStruct (Maybe String) [(CType, Maybe String, Maybe Int)]
@@ -49,7 +54,7 @@ data CType =
 data SymbolTable =
   SymbolTable
     { typedef :: M.Map String CType
-    , labels  :: M.Map String Coordinates
+    , labels  :: M.Map String Location
     , symbols :: M.Map String CType
     , structs :: M.Map String CType
     , unions :: M.Map String CType
@@ -59,15 +64,15 @@ data SymbolTable =
   deriving (Show, Eq)
 
 data Error
-  = ScanError Coordinates String
-  | ParseError Coordinates String
-  | SyntaxError Coordinates String
-  | TypeError Coordinates String
-  | InternalError Coordinates String
-  | PreProcessError Coordinates String
+  = ScanError Location String
+  | ParseError Location String
+  | SyntaxError Location String
+  | TypeError Location String
+  | InternalError Location String
+  | PreProcessError Location String
   deriving (Show, Eq)
 
-errorLoc :: Error -> Coordinates
+errorLoc :: Error -> Location
 errorLoc (ScanError c _) = c
 errorLoc (ParseError c _) = c
 errorLoc (SyntaxError c _) = c
@@ -84,11 +89,7 @@ errorMsg (InternalError _ s) = s
 errorMsg (PreProcessError _ s) = s
 
 instance Alternative (Either Error) where
-  empty = Left $ InternalError (1, 1) "empty"
+  empty = Left $ InternalError ("", (1, 1)) "empty"
   Left _ <|> e2 = e2
   e1 <|> _ = e1
-
-type Row = Int
-type Col = Int
-type Coordinates = (Row, Col)
 
