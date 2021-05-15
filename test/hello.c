@@ -1,8 +1,11 @@
+#include <stdio.h>
+
 struct student
 {
    char name[50];
    int height;
 };
+
 int main(){
     struct student stud1[5], stud2[5];
     // FILE *fptr;

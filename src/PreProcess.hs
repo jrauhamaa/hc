@@ -1,7 +1,9 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 
 module PreProcess where
 
+import Control.Monad (foldM)
 import Control.Applicative
 import System.Directory (doesFileExist)
 import Data.Char (isSpace)
@@ -9,11 +11,11 @@ import Data.Char (isSpace)
 import qualified Data.Map as M
 
 import Lexeme (CLexeme(..))
-import Scanner (ScanItem(..), scanCLine)
+import Scanner (ScanItem(..), scanCLine, scanCCode)
 import Utils (Error(..), Location, Filename, errorLoc)
 import IR (evaluateConstantExpression)
 import Parser (Parser(..), cConstantExpressionP)
-import ParseItem (ParseItem(..))
+import ParseItem (CConstantExpression, ParseItem(..))
 import Config (libraryIncludePath)
 
 type Line = [ScanItem CLexeme]
@@ -84,42 +86,69 @@ readMacro c line =
     _ -> Left $ PreProcessError c "Error parsing a macro definition"
 
 evaluateIfCondition ::
-     Context -> Line -> Either Error Bool
-evaluateIfCondition ctx [] =
-  Left $ PreProcessError (fileName ctx, (lineNum ctx, 1)) "if expression doesn't have a condition"
-evaluateIfCondition ctx (ScanItem { scanItem = LLabel "defined" }:rest) =
-  case rest of
-    [ScanItem { scanItem = LLabel name }] ->
-      case M.lookup name (macroSymbols ctx) of
-        Just _ -> return True
-        Nothing -> return False
-    _ ->
-      Left $ PreProcessError (fileName ctx, (lineNum ctx, 1)) "illegal if defined condition"
+     Context -> PPIfConditionTernary -> Either Error Bool
+evaluateIfCondition ctx (PPIfConditionTernary orCondition Nothing) =
+  evaluateIfConditionOr ctx orCondition
 evaluateIfCondition
-  ctx (ScanItem { scanItem = LNot }
-       :ScanItem { scanItem = LLabel "defined" }
-       :rest ) =
-  case rest of
-    [ScanItem { scanItem = LLabel name }] ->
-      case M.lookup name (macroSymbols ctx) of
-        Just _ -> return False
-        Nothing -> return True
-    _ ->
-      Left $ PreProcessError (fileName ctx, (lineNum ctx, 1)) "illegal if defined condition"
-evaluateIfCondition ctx line = do
-  transformed <- macroTransform (fileName ctx, (lineNum ctx, 1)) (macroSymbols ctx) line
-  (_, notParsed, constExpr) <-
-    runParser cConstantExpressionP
-      $ transformed ++ [ScanItem { scanLoc = ("", (0, 0))
-                                 , scanStr = ""
-                                 , scanItem = LEndMarker
-                                 }]
-  if map scanItem notParsed == [LEndMarker]
-    then do
-      result <- evaluateConstantExpression $ parseItem constExpr
-      return (result /= 0)
+     ctx (PPIfConditionTernary
+            orCondition
+            (Just (orCondition', ternaryCondition))) = do
+  condition <- evaluateIfConditionOr ctx orCondition
+  if condition
+    then evaluateIfConditionOr ctx orCondition'
+    else evaluateIfCondition ctx ternaryCondition
+
+evaluateIfConditionOr ::
+     Context -> PPIfConditionOr -> Either Error Bool
+evaluateIfConditionOr ctx (PPIfConditionOr andConditions) =
+  if not (null andConditions)
+    then
+      foldM
+        (\acc current ->
+          if acc
+            then
+              return True
+            else
+              evaluateIfConditionAnd ctx current)
+        False
+        andConditions
     else
-      Left $ PreProcessError (fileName ctx, (lineNum ctx, 1)) "failed to evaluate if condition"
+      Left . PreProcessError (fileName ctx, (lineNum ctx, 1))
+        $ "empty if condition"
+
+evaluateIfConditionAnd ::
+     Context -> PPIfConditionAnd -> Either Error Bool
+evaluateIfConditionAnd ctx (PPIfConditionAnd expressions) =
+  if not (null expressions)
+    then
+      foldM
+        (\acc current -> do
+          if acc
+            then
+              evaluateIfConditionExpression ctx current
+            else
+              return False)
+        True
+        expressions
+    else
+      Left . PreProcessError (fileName ctx, (lineNum ctx, 1))
+        $ "empty if condition"
+
+evaluateIfConditionExpression ::
+     Context -> PPIfConditionExpression -> Either Error Bool
+evaluateIfConditionExpression ctx (PPIfConditionDefined name) =
+  case M.lookup name (macroSymbols ctx) of
+    Just _ -> return True
+    _ -> return False
+evaluateIfConditionExpression ctx (PPIfConditionNotDefined name) =
+  case M.lookup name (macroSymbols ctx) of
+    Nothing -> return True
+    _ -> return False
+evaluateIfConditionExpression _ (PPIfConditionExpression expr) = do
+  result <- evaluateConstantExpression expr
+  return (result /= 0)
+evaluateIfConditionExpression ctx (PPIfConditionParenthesized expr) =
+  evaluateIfCondition ctx expr
 
 ltrim :: String -> String
 ltrim = dropWhile isSpace
@@ -135,11 +164,12 @@ preTransform :: Filename -> String -> Either Error [Line]
 preTransform fName sourceCode =
   noWhiteSpace
   where
-    preTransformed = lineSplice . trigraph $ sourceCode
-    withCoordinates = zip (map (\x -> (fName, (x, 1))) [1..]) preTransformed
-    scanned = traverse (uncurry scanCLine) withCoordinates
-    noComments = map removeComments <$> scanned
-    noWhiteSpace = map removeWhitespace <$> noComments
+    preTransformed = unlines . lineSplice . trigraph $ sourceCode
+    lexemes = scanCCode fName preTransformed
+    locations = map (\x -> (fName, (x, 1))) [1..]
+    noComments = concatMap scanStr . removeComments <$> lexemes
+    scanned = noComments >>= traverse (uncurry scanCLine) . zip locations . lines
+    noWhiteSpace = map removeWhitespace <$> scanned
 
 -- replace trigraph sequences in source string
 trigraph :: String -> String
@@ -176,10 +206,11 @@ readLines fName sourceCode =
 -- replace comments with single spaces
 removeComments :: Line -> Line
 removeComments [] = []
-removeComments (ScanItem { scanLoc = c, scanItem = LComment }:lineTail) =
+removeComments (ScanItem { scanStr = comment, scanLoc = c, scanItem = LComment }:lineTail) =
   (ScanItem { scanLoc = c
             , scanItem = LWhiteSpace
-            , scanStr = " " }) : removeComments lineTail
+            -- replace multiline comments with corresponding number of empty lines
+            , scanStr = " " ++ filter (== '\n') comment }) : removeComments lineTail
 removeComments (item:lineTail) = item : removeComments lineTail
 
 -- merge whitespace tokens with bordering tokens
@@ -296,17 +327,39 @@ data PPInclude
   deriving (Eq, Show)
 
 data PPIf
-  -- #if Line [PPSourceLine] (Maybe PPElif) #endif
-  = PPIf Line [PPSourceLine] (Maybe PPElif) (Maybe PPElse)
-  -- #ifdef String [PPSourceLine] (Maybe PPElif) (Maybe PPElse) #endif
-  | PPIfdef String [PPSourceLine] (Maybe PPElif) (Maybe PPElse)
-  -- #ifndef String [PPSourceLine] (Maybe PPElif) (Maybe PPElse) #endif
-  | PPIfndef String [PPSourceLine] (Maybe PPElif) (Maybe PPElse)
+  -- #if PPIfConditionTernary [PPSourceLine] (Maybe PPElif) #endif
+  = PPIf PPIfConditionTernary [PPSourceLine] (Maybe PPElif) (Maybe PPElse)
+  -- not macro-expanded
+  | PPIfMacro Line [PPSourceLine] (Maybe PPElif) (Maybe PPElse)
+  deriving (Eq, Show)
+
+-- optional ternary expression
+data PPIfConditionTernary =
+  PPIfConditionTernary
+    PPIfConditionOr
+    (Maybe (PPIfConditionOr, PPIfConditionTernary))
+  deriving (Eq, Show)
+
+newtype PPIfConditionOr =
+  PPIfConditionOr [PPIfConditionAnd]
+  deriving (Eq, Show)
+
+newtype PPIfConditionAnd =
+  PPIfConditionAnd [PPIfConditionExpression]
+  deriving (Eq, Show)
+
+data PPIfConditionExpression
+  = PPIfConditionDefined String
+  | PPIfConditionNotDefined String
+  | PPIfConditionExpression CConstantExpression
+  | PPIfConditionParenthesized PPIfConditionTernary
   deriving (Eq, Show)
 
 data PPElif
   -- #elif Line [PPSourceLine] (Maybe PPElif)
-  = PPElif Line [PPSourceLine] (Maybe PPElif)
+  = PPElif PPIfConditionTernary [PPSourceLine] (Maybe PPElif)
+  -- not macro-expanded
+  | PPElifMacro Line [PPSourceLine] (Maybe PPElif)
   deriving (Eq, Show)
 
 newtype PPElse
@@ -370,6 +423,21 @@ directiveParser =
   <|> PPDirectivePragma <$ pragmaParser
   <|> PPDirectiveEmpty <$ emptyParser
 
+isMacroFunction :: Line -> Bool
+isMacroFunction line = isMacroFunction' 1 line
+
+isMacroFunction' :: Int -> Line -> Bool
+isMacroFunction' 0 [] = False
+isMacroFunction' 0 _ = True
+isMacroFunction' _ [] = False
+isMacroFunction' n (ScanItem { scanItem = LParenthesisOpen }:rest) =
+  isMacroFunction' (n + 1) rest
+isMacroFunction' n (ScanItem { scanItem = LParenthesisClose }:rest) =
+  isMacroFunction' (n - 1) rest
+isMacroFunction' n (_:rest) =
+  isMacroFunction' n rest
+
+
 defineParser :: PPParser PPDefine
 defineParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
   case line of
@@ -378,15 +446,20 @@ defineParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
     (ScanItem { scanItem = LPPDefine }:ScanItem { scanItem = LLabel varName }:lineTail) ->
       case lineTail of
         [] -> return (rest, PPDefineConst varName "")
-        (ScanItem { scanItem = LParenthesisOpen }:listTail) -> do
-          (argNames, body) <- readMacro (scanLoc $ head line) listTail
-          return (rest, PPDefineMacro varName argNames body)
+        (ScanItem { scanItem = LParenthesisOpen }:listTail) ->
+          if isMacroFunction listTail
+            then do
+              (argNames, body) <- readMacro (scanLoc $ head line) listTail
+              return (rest, PPDefineMacro varName argNames body)
+            else
+              return (rest, PPDefineConst varName (concatMap scanStr lineTail))
         l -> return (rest, PPDefineConst varName . concatMap scanStr $ l)
     _ ->
       Left $
         PreProcessError
           (scanLoc $ head line)
-          "Error trying to parse a preprocess directive"
+          $ "Error trying to parse a preprocess directive: "
+            ++ concatMap scanStr line
 
 undefParser :: PPParser PPUndef
 undefParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
@@ -396,7 +469,8 @@ undefParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
       Left $
         PreProcessError
           (scanLoc $ head line)
-          "Error trying to parse a preprocess directive"
+          $ "Error trying to parse a preprocess directive: "
+            ++ concatMap scanStr line
 
 includeParser :: PPParser PPInclude
 includeParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
@@ -406,55 +480,311 @@ includeParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
       Left $
         PreProcessError
           (scanLoc $ head line)
-          "Error trying to parse a preprocess directive"
+          $ "Error trying to parse a preprocess directive: "
+            ++ concatMap scanStr line
+
+parseIfCondition :: MacroDict -> Line -> Either Error PPIfConditionTernary
+parseIfCondition m line = do
+  (_, notParsed, orCondition) <-
+    runParser (parseIfConditionTernary m) line
+  if null notParsed
+    then return orCondition
+    else
+      Left . PreProcessError (scanLoc $ head notParsed) $
+        "error parsing if condition: notparsed: " ++ concatMap scanStr notParsed ++ "\n line : " ++ concatMap scanStr line ++ "\n result: " ++ show orCondition
+
+parseIfConditionTernary :: MacroDict -> Parser PPIfConditionTernary
+parseIfConditionTernary m =
+  Parser $ \input -> do
+    (parsed, notParsed, orCondition) <- runParser (parseIfConditionOr m) input
+    if not (null notParsed) && scanItem (head notParsed) == LTernary
+      then do
+        (parsed', notParsed', orCondition') <-
+          runParser (parseIfConditionOr m) (tail notParsed)
+        if not (null notParsed') && scanItem (head notParsed') == LColon
+          then do
+            (parsed'', notParsed'', ternaryCondition) <-
+              runParser (parseIfConditionTernary m) (tail notParsed')
+            return ( parsed ++ [head notParsed] ++ parsed' ++ [head notParsed'] ++ parsed''
+                   , notParsed''
+                   , PPIfConditionTernary orCondition (Just (orCondition', ternaryCondition))
+                   )
+          else
+            if null input
+              then Left . PreProcessError ("", (0, 0)) $ "unexpected EOL"
+              else
+                Left . PreProcessError (scanLoc (head input)) $
+                  "Error parsing a ternary if condition: " ++ concatMap show notParsed'
+      else
+        return (parsed, notParsed, PPIfConditionTernary orCondition Nothing)
+
+
+
+parseIfConditionOr :: MacroDict -> Parser PPIfConditionOr
+parseIfConditionOr m =
+  Parser $ \input -> do
+    (parsed, notParsed, andCondition) <- runParser (parseIfConditionAnd m) input
+    case notParsed of
+      (ScanItem { scanItem = LOr }:_) -> do
+        (parsed', notParsed', PPIfConditionOr andConditions)
+          <- runParser (parseIfConditionOr m) (tail notParsed)
+        return ( parsed ++ parsed'
+               , notParsed'
+               , PPIfConditionOr (andCondition : andConditions)
+               )
+      _ ->
+        return (parsed, notParsed, PPIfConditionOr [andCondition])
+
+parseIfConditionAnd :: MacroDict -> Parser PPIfConditionAnd
+parseIfConditionAnd m =
+  Parser $ \input -> do
+    (parsed, notParsed, expression) <- runParser (parseIfConditionExpression m) input
+    case notParsed of
+      (ScanItem { scanItem = LAnd }:_) -> do
+        (parsed', notParsed', PPIfConditionAnd expressions)
+          <- runParser (parseIfConditionAnd m) (tail notParsed)
+        return ( parsed ++ parsed'
+               , notParsed'
+               , PPIfConditionAnd (expression : expressions)
+               )
+      _ ->
+        return (parsed, notParsed, PPIfConditionAnd [expression])
+
+parseIfConditionExpression :: MacroDict -> Parser PPIfConditionExpression
+parseIfConditionExpression m =
+  parseIfDefined m <|>
+  parseIfNotDefined m <|>
+  parseIfConstantExpression m <|>
+  parseIfParenthesized m
+
+parseIfDefined :: MacroDict -> Parser PPIfConditionExpression
+parseIfDefined _ =
+  Parser $ \case
+    input@(ScanItem {scanItem = LLabel "defined"}
+           :ScanItem {scanItem = LLabel name}
+           :rest
+           ) ->
+      return (take 2 input, rest, PPIfConditionDefined name)
+    [] ->
+      Left . PreProcessError ("", (0, 0)) $ "unexpected EOF"
+    (item:_) ->
+      Left . PreProcessError (scanLoc item) $
+        "error trying to parse if defined condition"
+
+parseIfNotDefined :: MacroDict -> Parser PPIfConditionExpression
+parseIfNotDefined _ =
+  Parser $ \case
+    input@(ScanItem {scanItem = LNot}
+           :ScanItem {scanItem = LLabel "defined"}
+           :ScanItem {scanItem = LLabel name}
+           :rest
+           ) ->
+      return (take 3 input, rest, PPIfConditionNotDefined name)
+    [] ->
+      Left . PreProcessError ("", (0, 0)) $ "unexpected EOF"
+    (item:_) ->
+      Left . PreProcessError (scanLoc item) $
+        "error trying to parse if not defined condition"
+
+parseIfParenthesized :: MacroDict -> Parser PPIfConditionExpression
+parseIfParenthesized m =
+  Parser $ \case
+    [] ->
+      Left . PreProcessError ("", (0, 0)) $ "unexpected EOF"
+    input@(ScanItem {scanItem = LParenthesisOpen}
+           :rest
+           ) -> do
+      (parsed, notParsed, ternaryCondition) <-
+        runParser (parseIfConditionTernary m) rest
+      case notParsed of
+        (ScanItem {scanItem = LParenthesisClose}:_) ->
+          return ( take 1 input ++ parsed ++ take 1 notParsed
+                 , tail notParsed
+                 , PPIfConditionParenthesized ternaryCondition
+                 )
+        [] ->
+          Left . PreProcessError ("", (0, 0)) $ "unexpected EOF"
+        (item:_) ->
+          Left . PreProcessError (scanLoc item) $
+            "error trying to parse if condition expression: notparsed:" ++ concatMap scanStr notParsed ++ "\n defined: " ++ concatMap (++ ", ") (M.keys m)
+    (item:_) ->
+      Left . PreProcessError (scanLoc item) $
+        "error trying to parse if condition expression"
+
+minimalTransform :: Location -> MacroDict -> Line -> Line -> Either Error Line
+minimalTransform l m transformed toTransform =
+  foldl
+    (\acc (t, nt) ->
+      case acc of
+        Left _ -> do
+          transformed' <- macroTransform l m t
+          if transformed' == transformed
+            then Right nt
+            else Left . PreProcessError l $ "error expanding a macro"
+        x -> x)
+    (Left (PreProcessError l ""))
+    splits
+  where
+    splits = map (`splitAt` toTransform) [0 .. (length toTransform)]
+
+parseIfConstantExpression :: MacroDict -> Parser PPIfConditionExpression
+parseIfConstantExpression m =
+  Parser $ \case
+    [] ->
+      Left . PreProcessError ("", (0, 0)) $ "unexpected EOF"
+    input -> do
+      let l = scanLoc $ head input
+          terminateParse = [LOr, LAnd, LTernary, LColon]
+          maximumParse = takeWhile ((`notElem` terminateParse) . scanItem) input
+          afterMaximumParse = dropWhile ((`notElem` terminateParse) . scanItem) input
+          endMarker = ScanItem { scanLoc = ("", (0, 0))
+                               , scanStr = ""
+                               , scanItem = LEndMarker
+                               }
+      transformed <- macroTransform l m maximumParse
+      (parsed, _, constExpr) <-
+        runParser cConstantExpressionP
+          $ transformed ++ [endMarker]
+      afterParse <- minimalTransform l m parsed maximumParse
+      return ( parsed
+             , afterParse ++ afterMaximumParse
+             , PPIfConditionExpression (parseItem constExpr)
+             )
+
+{-
+parseIfConstantExpression :: MacroDict -> Parser PPIfConditionExpression
+parseIfConstantExpression m =
+  Parser $ \case
+    [] ->
+      Left . PreProcessError ("", (0, 0)) $ "unexpected EOF"
+    input -> do
+      let terminateParse = [LOr, LAnd, LParenthesisClose]
+          toParse = takeWhile ((`notElem` terminateParse) . scanItem) input
+          afterParse = dropWhile ((`notElem` terminateParse) . scanItem) input
+          l = scanLoc $ head input
+      transformed <- macroTransform l m toParse
+      (_, notParsed, constExpr) <-
+        runParser cConstantExpressionP
+          $ transformed ++ [ScanItem { scanLoc = ("", (0, 0))
+                                    , scanStr = ""
+                                    , scanItem = LEndMarker
+                                    }]
+      if map scanItem notParsed == [LEndMarker]
+        then
+          return ( toParse
+                 , afterParse
+                 , PPIfConditionExpression (parseItem constExpr)
+                 )
+        else
+          Left . PreProcessError l $ "error parsing an if expression: notparsed: " ++ concatMap scanStr notParsed
+
+parseIfCondition :: Location -> MacroDict -> Line -> Either Error PPIfConditionOr
+parseIfCondition l _ [] = Left . PreProcessError l $ "empty if condition"
+parseIfCondition l m line = do
+  (notParsed, condition) <- parseIfConditionOr l m line
+  if null notParsed
+    then return condition
+    else
+      Left . PreProcessError l $ "error parsing an if condition"
+
+parseIfConditionOr :: Location -> MacroDict -> Line -> Either Error (Line, PPIfConditionOr)
+parseIfConditionOr l _ [] = Left . PreProcessError l $ "empty if condition"
+parseIfConditionOr l m line = do
+  (rest, andCondition) <- parseIfConditionAnd l m line
+  case rest of
+    (ScanItem { scanItem = LOr }:_) -> do
+      (rest', PPIfConditionOr andConditions) <- parseIfConditionOr l m (tail rest)
+      return (rest', PPIfConditionOr (andCondition : andConditions))
+    _ ->
+      return (rest, PPIfConditionOr [andCondition])
+
+parseIfConditionAnd :: Location -> MacroDict -> Line -> Either Error (Line, PPIfConditionAnd)
+parseIfConditionAnd l _ [] = Left . PreProcessError l $ "empty if condition"
+parseIfConditionAnd l m line = do
+  (rest, expression) <- parseIfConditionExpression l m line
+  case rest of
+    (ScanItem { scanItem = LAnd }:_) -> do
+      (rest', PPIfConditionAnd expressions) <- parseIfConditionAnd l m (tail rest)
+      return (rest', PPIfConditionAnd (expression : expressions))
+    _ ->
+      return (rest, PPIfConditionAnd [expression])
+
+parseIfConditionExpression :: Location -> MacroDict -> Line -> Either Error (Line, PPIfConditionExpression)
+parseIfConditionExpression l _ [] = Left . PreProcessError l $ "empty if condition"
+parseIfConditionExpression l m (ScanItem { scanItem = LParenthesisOpen }:lineTail) = do
+  (rest, orCondition) <- parseIfConditionOr l m lineTail
+  if not (null rest) && scanItem (head rest) == LParenthesisClose
+    then
+      return (tail rest, PPIfConditionParenthesized orCondition)
+    else
+      Left . PreProcessError l $
+        "error parsing an if condition expression: rest: " ++ concatMap scanStr rest
+parseIfConditionExpression l _ (ScanItem { scanItem = LLabel "defined" }:lineTail) =
+  case lineTail of
+    (ScanItem { scanItem = LLabel name }:rest) ->
+      return (rest, PPIfConditionDefined name)
+    _ ->
+      Left . PreProcessError l $ "error parsing an if defined condition"
+parseIfConditionExpression l _ (ScanItem { scanItem = LNot }
+                                :ScanItem { scanItem = LLabel "defined" }
+                                :lineTail) =
+  case lineTail of
+    (ScanItem { scanItem = LLabel name }:rest) ->
+      return (rest, PPIfConditionNotDefined name)
+    _ ->
+      Left . PreProcessError l $ "error parsing an if not defined condition"
+parseIfConditionExpression l m line = do
+  let terminateParse = [LOr, LAnd, LParenthesisClose]
+      toParse = takeWhile ((`notElem` terminateParse) . scanItem) line
+      afterParse = dropWhile ((`notElem` terminateParse) . scanItem) line
+  transformed <- macroTransform l m toParse
+  (_, notParsed, constExpr) <-
+    runParser cConstantExpressionP
+      $ transformed ++ [ScanItem { scanLoc = ("", (0, 0))
+                                , scanStr = ""
+                                , scanItem = LEndMarker
+                                }]
+  if map scanItem notParsed == [LEndMarker]
+    then
+      return (afterParse, PPIfConditionExpression (parseItem constExpr))
+    else
+      Left . PreProcessError l $ "error parsing an if expression: notparsed: " ++ concatMap scanStr notParsed
+-}
 
 ifParser :: PPParser PPIf
 ifParser = ififParser <|> ifdefParser <|> ifndefParser
 
 ififParser :: PPParser PPIf
 ififParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
-  case line of
-    (ScanItem { scanItem = LPPIf }
-     : ScanItem { scanItem = LLabel "defined" }
-     : lineTail) ->
-       runPPParser
-         ifdefParser $
-         ((ScanItem { scanItem = LPPIfdef
-                    , scanLoc = scanLoc $ head line
-                    , scanStr = "" }
-          ):lineTail
-         ):rest
-    (ScanItem { scanItem = LPPIf }
-     : ScanItem { scanItem = LNot }
-     : ScanItem { scanItem = LLabel "defined" }
-     : lineTail) ->
-       runPPParser
-         ifndefParser $
-         ((ScanItem { scanItem = LPPIfndef
-                    , scanLoc = scanLoc $ head line
-                    , scanStr = "" }
-          ):lineTail
-         ):rest
-    (ScanItem { scanItem = LPPIf } : lineTail) -> do
-       (input', (body, ppelif, ppelse)) <- runPPParser readIfBody rest
-       return (input', PPIf lineTail body ppelif ppelse)
-    _ ->
+  if scanItem (head line) == LPPIf
+    then do
+      (input', (body, ppelif, ppelse)) <- runPPParser readIfBody rest
+      return (input', PPIfMacro (tail line) body ppelif ppelse)
+    else
       Left $
         PreProcessError
           (scanLoc $ head line)
-          "Error trying to parse a preprocess directive"
+          $ "Error trying to parse a preprocess directive: "
+            ++ concatMap scanStr line
 
 ifdefParser :: PPParser PPIf
 ifdefParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
   case map scanItem line of
     [LPPIfdef, LLabel varName] -> do
       (input', (body, ppelif, ppelse)) <- runPPParser readIfBody rest
-      return (input', PPIfdef varName body ppelif ppelse)
+      let condition =
+            PPIfConditionTernary
+              (PPIfConditionOr
+                [PPIfConditionAnd
+                  [PPIfConditionDefined varName]])
+              Nothing
+      return (input', PPIf condition body ppelif ppelse)
     _ ->
       Left $
         PreProcessError
           (scanLoc $ head line)
-          "Error trying to parse a preprocess directive"
+          $ "Error trying to parse a preprocess directive: "
+            ++ concatMap scanStr line
 
 readIfBody :: PPParser ([PPSourceLine], Maybe PPElif, Maybe PPElse)
 readIfBody = nonEmptyParser $ PPParser $ \input@(line:rest) ->
@@ -480,14 +810,15 @@ readElif = nonEmptyLineParser $ PPParser $ \(line:rest) ->
       if (scanItem . head . head $ input') == LPPElif
         then do
           (input'', ppelif) <- runPPParser readElif input'
-          return (input'', PPElif (tail line) lns $ Just ppelif)
+          return (input'', PPElifMacro (tail line) lns $ Just ppelif)
         else
-          return (input', PPElif (tail line) lns Nothing)
+          return (input', PPElifMacro (tail line) lns Nothing)
     else
       Left $
         PreProcessError
           (scanLoc $ head line)
-          "Error trying to parse a preprocess directive"
+          $ "Error trying to parse a preprocess directive: "
+            ++ concatMap scanStr line
 
 readElifBody :: PPParser [PPSourceLine]
 readElifBody = nonEmptyParser $ PPParser $ \input@(line:_) ->
@@ -517,12 +848,19 @@ ifndefParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
   case map scanItem line of
     [LPPIfndef, LLabel varName] -> do
       (input', (body, ppelif, ppelse)) <- runPPParser readIfBody rest
-      return (input', PPIfndef varName body ppelif ppelse)
+      let condition =
+            PPIfConditionTernary
+              (PPIfConditionOr
+                [PPIfConditionAnd
+                  [PPIfConditionNotDefined varName]])
+              Nothing
+      return (input', PPIf condition body ppelif ppelse)
     _ ->
       Left $
         PreProcessError
           (scanLoc $ head line)
-          "Error trying to parse a preprocess directive"
+          $ "Error trying to parse a preprocess directive: "
+            ++ concatMap scanStr line
 
 lineParser :: PPParser PPLine
 lineParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
@@ -548,16 +886,18 @@ lineParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
       Left $
         PreProcessError
           (scanLoc $ head line)
-          "Error trying to parse a preprocess directive"
+          $ "Error trying to parse a preprocess directive: "
+            ++ concatMap scanStr line
 
 errorParser :: PPParser PPError
 errorParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
-  if scanItem (head line) == LPPPragma
+  if scanItem (head line) == LPPError
     then return (rest, PPErrorMacro $ tail line)
     else Left $
            PreProcessError
              (scanLoc $ head line)
-             "Error trying to parse a preprocess directive"
+             $ "Error trying to parse a preprocess directive: "
+               ++ concatMap scanStr line
 
 pragmaParser :: PPParser ()
 pragmaParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
@@ -566,16 +906,20 @@ pragmaParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
     else Left $
            PreProcessError
              (scanLoc $ head line)
-             "Error trying to parse a preprocess directive"
+             $ "Error trying to parse a preprocess directive: "
+               ++ concatMap scanStr line
 
 emptyParser :: PPParser ()
 emptyParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->
-  if map scanItem line == [LPPEmpty]
-    then return (rest, ())
-    else Left $
+  case map scanItem line of
+    [LPPEmpty] -> return (rest, ())
+    -- ignore warnings
+    (LPPEmpty:LLabel "warning":_) -> return (rest, ())
+    _ -> Left $
            PreProcessError
              (scanLoc $ head line)
-             "Error trying to parse a preprocess directive"
+             $ "Error trying to parse a preprocess directive: "
+               ++ concatMap scanStr line
 
 ------------
 -- MACRO --
@@ -685,8 +1029,16 @@ preProcessCode fName sourceCode = do
       Context
         { fileName = fName
         , lineNum = 1
+        , macroSymbols = M.fromList [("__GNUC__", MacroConstant "0"), ("__STDC__", MacroConstant "")]
+        }
+    {-
+    initialContext =
+      Context
+        { fileName = fName
+        , lineNum = 1
         , macroSymbols = M.empty
         }
+    -}
 
 preProcessCode' :: PPTransform String
 preProcessCode' ctx sourceCode =
@@ -837,6 +1189,11 @@ ppTransformElif (Just (PPElse elseBody)) ctx Nothing =
   ppTransformTranslationUnit
     (incrementLineNum ctx)
     (PPTranslationUnit elseBody)
+ppTransformElif ppelse ctx (Just (PPElifMacro line body ppelif)) =
+  case parseIfCondition (macroSymbols ctx) line of
+    Right condition ->
+      ppTransformElif ppelse ctx (Just (PPElif condition body ppelif))
+    Left e -> return (Left e)
 ppTransformElif ppelse ctx (Just (PPElif condition body ppelif)) =
   case evaluateIfCondition ctx condition of
     Left e -> return . Left $ e
@@ -851,6 +1208,17 @@ ppTransformElif ppelse ctx (Just (PPElif condition body ppelif)) =
                ppelif
 
 ppTransformIf :: PPTransform PPIf
+ppTransformIf ctx (PPIfMacro conditionLine body ppelif ppelse) =
+  if not (null conditionLine)
+    then
+      let condition = parseIfCondition (macroSymbols ctx) conditionLine
+       in case condition of
+         Right cond -> ppTransformIf ctx (PPIf cond body ppelif ppelse)
+         Left e -> return (Left e)
+    else
+      return . Left . PreProcessError (fileName ctx, (lineNum ctx, 1))
+        $ "empty if condition"
+
 ppTransformIf ctx (PPIf condition body ppelif ppelse) =
   case evaluateIfCondition ctx condition of
     Left e -> return . Left $ e
@@ -858,14 +1226,6 @@ ppTransformIf ctx (PPIf condition body ppelif ppelse) =
       if conditionValue
         then ppTransformTranslationUnit ctx . PPTranslationUnit $ body
         else ppTransformElif ppelse ctx ppelif
-ppTransformIf ctx (PPIfdef name body ppelif ppelse) =
-  case M.lookup name (macroSymbols ctx) of
-    Just _ -> ppTransformTranslationUnit ctx $ PPTranslationUnit body
-    Nothing -> ppTransformElif ppelse ctx ppelif
-ppTransformIf ctx (PPIfndef name body ppelif ppelse) =
-  case M.lookup name (macroSymbols ctx) of
-    Nothing -> ppTransformTranslationUnit ctx $ PPTranslationUnit body
-    Just _ -> ppTransformElif ppelse ctx ppelif
 
 ppTransformLine :: PPTransform PPLine
 ppTransformLine ctx (PPLine n) =
