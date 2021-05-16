@@ -132,7 +132,7 @@ testTypeCheck = hspec $ do
             ast = scanItems >>= runParser cCompoundStatementP
             expectedLabels =
               M.fromList [("label1", ("", (1, 3))), ("label2", ("", (1, 29)))]
-            typeCheckedAst = ast >>= (\(_, _, ast') -> tCompoundStatement ast' initialSymbols)
+            typeCheckedAst = ast >>= (\(_, ast') -> tCompoundStatement ast' initialSymbols)
             statements =
               case parseItem <$> typeCheckedAst of
                 Left e -> Left e

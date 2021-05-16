@@ -124,6 +124,6 @@ testGoodInput =
 
       it "parses a declaration" $ do
         runParser cDeclarationP testDeclarationInput
-          `shouldBe` Right (testDeclarationInput, [], declarationParse)
+          `shouldBe` Right ([], declarationParse)
 
 

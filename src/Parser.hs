@@ -21,7 +21,7 @@ type Input = [ScanItem CLexeme]
 
 newtype Parser a =
   Parser
-    { runParser :: Input -> Either Error (Input, Input, a)
+    { runParser :: Input -> Either Error (Input, a)
     }
 
 type PIParser a = Parser (ParseItem a)
@@ -30,12 +30,12 @@ instance Functor Parser where
   fmap fab pa = Parser $ (fmap . fmap) fab . runParser pa
 
 instance Applicative Parser where
-  pure x = Parser $ \input -> Right ([], input, x)
+  pure x = Parser $ \input -> Right (input, x)
   p1 <*> p2 =
     Parser $ \input -> do
-      (parsed, notParsed, fab) <- runParser p1 input
-      (parsed', notParsed', a) <- runParser p2 notParsed
-      return (parsed <> parsed', notParsed', fab a)
+      (input', fab) <- runParser p1 input
+      (input'', a) <- runParser p2 input'
+      return (input'', fab a)
 
 instance Alternative Parser where
   empty = Parser $ \_ -> Left $ ParseError ("", (0, 0)) "Error"
@@ -52,7 +52,7 @@ instance Alternative Parser where
 
 parseCCode :: Input -> Either Error (ParseItem CTranslationUnit)
 parseCCode input = do
-  (_, _, result) <- runParser cParser input
+  (_, result) <- runParser cParser input
   return result
 
 cParser :: PIParser CTranslationUnit
@@ -67,8 +67,8 @@ parserToPIParser p =
   Parser $ \case
     [] -> Left unexpectedEof
     input@((ScanItem c _ _):_) -> do
-      (parsed, notParsed, a) <- runParser p input
-      return (parsed, notParsed, ParseItem c a initialSymbols)
+      (notParsed, a) <- runParser p input
+      return (notParsed, ParseItem c a initialSymbols)
 
 unexpectedEof :: Error
 unexpectedEof = ParseError ("", (0, 0)) "Unexpected EOF"
@@ -89,49 +89,49 @@ singleP :: CLexeme -> Parser CLexeme
 singleP l =
   Parser $ \case
     [] -> Left unexpectedEof
-    (scanned@(ScanItem c _ lexeme):rest) ->
+    (ScanItem c _ lexeme:rest) ->
       if lexeme == l
-        then Right ([scanned], rest, lexeme)
+        then Right (rest, lexeme)
         else Left $ unexpectedLexeme c (show l) (show lexeme)
 
 intLiteralP :: PIParser Int
 intLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
-    (scanned@(ScanItem c _ (LIntLiteral x)):rest) ->
-      Right ([scanned], rest, ParseItem c x initialSymbols)
+    (ScanItem c _ (LIntLiteral x):rest) ->
+      Right (rest, ParseItem c x initialSymbols)
     ((ScanItem c _ l):_) -> Left $ unexpectedLexeme c "LIntLiteral" $ show l
 
 floatLiteralP :: PIParser Double
 floatLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
-    (scanned@(ScanItem c _ (LFloatLiteral x)):rest) ->
-      Right ([scanned], rest, ParseItem c x initialSymbols)
+    (ScanItem c _ (LFloatLiteral x):rest) ->
+      Right (rest, ParseItem c x initialSymbols)
     ((ScanItem c _ l):_) -> Left $ unexpectedLexeme c "LFloatLiteral" $ show l
 
 charLiteralP :: PIParser Char
 charLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
-    (scanned@(ScanItem c _ (LCharLiteral x)):rest) ->
-      Right ([scanned], rest, ParseItem c x initialSymbols)
+    (ScanItem c _ (LCharLiteral x):rest) ->
+      Right (rest, ParseItem c x initialSymbols)
     ((ScanItem c _ l):_) -> Left $ unexpectedLexeme c "LCharLiteral" $ show l
 
 stringLiteralP :: PIParser String
 stringLiteralP =
   Parser $ \case
     [] -> Left unexpectedEof
-    (scanned@(ScanItem c _ (LStringLiteral x)):rest) ->
-      Right ([scanned], rest, ParseItem c x initialSymbols)
+    (ScanItem c _ (LStringLiteral x):rest) ->
+      Right (rest, ParseItem c x initialSymbols)
     ((ScanItem c _ l):_) -> Left $ unexpectedLexeme c "LStringLiteral" $ show l
 
 labelP :: Parser String
 labelP =
   Parser $ \case
     [] -> Left unexpectedEof
-    (scanned@(ScanItem _ _ (LLabel x)):rest) ->
-      Right ([scanned], rest, x)
+    (ScanItem _ _ (LLabel x):rest) ->
+      Right (rest, x)
     ((ScanItem c _ l):_) -> Left $ unexpectedLexeme c "LLabel" $ show l
 
 optionalParser :: PIParser a -> (ParseItem a -> b) -> b -> PIParser b
@@ -149,21 +149,23 @@ braceP p = singleP LBraceOpen *> p <* singleP LBraceClose
 
 afterP :: PIParser a -> PIParser b -> PIParser a
 afterP before after =
-  Parser $ \input ->
-    let parsers = map splitParser [0 .. (length input)]
+  Parser $ \input -> do
+    (afterMaxParse, _) <- runParser before input
+    let maxParseLength = length input - length afterMaxParse
+        parsers = map splitParser [0 .. maxParseLength]
         p = foldl reduce failingP parsers
-     in runParser p input
+    runParser p input
   where
     reduce acc p =
       Parser $ \input ->
         case runParser acc input of
           Left _ -> runParser p input
-          resultAcc@(Right (_, remainingAcc, _)) ->
+          resultAcc@(Right (remainingAcc, _)) ->
             case runParser p input of
               Left _ -> resultAcc
-              resultP@(Right (_, remainingP, _)) -> do
-                (_, remainingAccAfter, _) <- runParser after remainingAcc
-                (_, remainingPAfter, _) <- runParser after remainingP
+              resultP@(Right (remainingP, _)) -> do
+                (remainingAccAfter, _) <- runParser after remainingAcc
+                (remainingPAfter, _) <- runParser after remainingP
                 if length remainingAccAfter <= length remainingPAfter
                   then resultAcc
                   else resultP
@@ -172,9 +174,9 @@ afterP before after =
         let (begin, end) = splitAt n input
         in
           case runParser before $ begin <> [ScanItem ("", (0, 0)) "" LEndMarker] of
-            Right (_, [ScanItem _ _ LEndMarker], e) ->
+            Right ([ScanItem _ _ LEndMarker], e) ->
               case runParser after end of
-                Right _ -> Right (begin, end, e)
+                Right _ -> Right (end, e)
                 _ -> Left $ ParseError ("", (0, 0)) "Error"
             _ -> Left $ ParseError ("", (0, 0)) "Error"
 
@@ -224,10 +226,10 @@ cFunctionSpecifiersP =
   parserToPIParser $
   Parser $ \case
     input@((ScanItem _ _ (LLabel _)):(ScanItem _ _ LParenthesisOpen):_) ->
-      Right ([], input, CDeclarationSpecifiersOptionalEmpty)
+      Right (input, CDeclarationSpecifiersOptionalEmpty)
     input ->
       case runParser specifiersP input of
-        Left _ -> Right ([], input, CDeclarationSpecifiersOptionalEmpty)
+        Left _ -> Right (input, CDeclarationSpecifiersOptionalEmpty)
         r -> fmap CDeclarationSpecifiersOptional <$> r
     where
       specifiersP =
