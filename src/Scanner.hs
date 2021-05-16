@@ -22,6 +22,8 @@ data ScanItem a =
     }
   deriving (Show, Eq)
 
+type Line = [ScanItem CLexeme]
+
 type Input = (Location, String)
 
 newtype Scanner a =
