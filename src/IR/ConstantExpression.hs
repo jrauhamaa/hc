@@ -306,7 +306,7 @@ evaluatePostfixExpression' c _ _ =
 evaluatePrimaryExpression :: CPrimaryExpression -> EvaluationResult
 evaluatePrimaryExpression (CPrimaryExpressionId i) =
   Left . SyntaxError (parseLoc i) $
-    "variable name in a constant expression: " ++ (show (parseItem i))
+    "variable name in a constant expression: " ++ show (parseItem i)
 evaluatePrimaryExpression (CPrimaryExpressionString s) =
   Left . SyntaxError (parseLoc s) $ "string literal in a constant expression"
 evaluatePrimaryExpression (CPrimaryExpressionParen expr) =

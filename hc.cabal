@@ -17,20 +17,23 @@ maintainer:          johannes.rauhamaa@iki.fi
 
 library
   exposed-modules:     Config
+                     , IR
                      , IR.ConstantExpression
-                     , Lexeme
                      , Parser
                      , Parser.Parser
                      , Parser.ParserUtils
                      , Parser.ParseItem
-                     , Parser.Symbols
                      , PreProcess
                      , PreProcess.Parser
                      , PreProcess.Macro
                      , PreProcess.PPTransform
                      , PreProcess.PreTransform
                      , Scanner
-                     -- , TypeCheck
+                     , Scanner.Scanner
+                     , Scanner.Lexeme
+                     , Symbols
+                     , Symbols.TypeAnnotate
+                     , Symbols.TypeReader
                      , Utils
   -- other-modules:       TestScanner
   -- other-extensions:
@@ -62,18 +65,23 @@ test-suite tests
                      , TestPreProcessor
                      , TestSymbols
                      , TestTypeCheck
-                     , Config
                      , IR
-                     , Lexeme
-                     , ParseItem
+                     , IR.ConstantExpression
                      , Parser
+                     , Parser.Parser
+                     , Parser.ParserUtils
+                     , Parser.ParseItem
                      , PreProcess
-                     , PreProcess.PPParser
+                     , PreProcess.Parser
                      , PreProcess.Macro
                      , PreProcess.PPTransform
                      , PreProcess.PreTransform
                      , Scanner
-                     , TypeCheck
+                     , Scanner.Scanner
+                     , Scanner.Lexeme
+                     , Symbols
+                     , Symbols.TypeAnnotate
+                     , Symbols.TypeReader
                      , Utils
   build-depends:       base
                      , hspec

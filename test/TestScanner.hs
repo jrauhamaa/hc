@@ -6,8 +6,6 @@ import Data.Either
 import System.IO
 
 import Scanner
-import Lexeme
-
 
 testScanner :: IO ()
 testScanner = do

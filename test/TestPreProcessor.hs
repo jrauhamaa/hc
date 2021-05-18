@@ -7,9 +7,11 @@ import Data.Either
 import qualified Data.Map as M
 
 import Utils
-import Lexeme
 import Scanner
-import PreProcess
+import PreProcess.Macro
+import PreProcess.PreTransform
+import PreProcess.Parser
+import PreProcess.PPTransform
 
 testPreProcessor :: IO ()
 testPreProcessor = do
@@ -20,7 +22,7 @@ testPreProcessor = do
   hspec testConcatTokens
   hspec testPPTransform
   hspec testPreTransform
-  hspec testMacroTransform
+  hspec testMacroExpand
   testPreProcessCode
 
 testTriGraph :: Spec
@@ -197,13 +199,15 @@ testParsers =
     context "when given invalid input" $ do
       it "discards bad macro definitions" $ do
         let inputLine =
-              -- #define VARNAME(a, b (a) + (b)
+              -- #define VARNAME(a, b c) (a) + (b)
               [ ScanItem { scanLoc = ("", (0, 0)), scanStr = "#define ", scanItem = LPPDefine }
               , ScanItem { scanLoc = ("", (0, 0)), scanStr = "VARNAME", scanItem = LLabel "VARNAME" }
               , ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
               , ScanItem { scanLoc = ("", (0, 0)), scanStr = "a", scanItem = LLabel "a" }
               , ScanItem { scanLoc = ("", (0, 0)), scanStr = ", ", scanItem = LComma }
               , ScanItem { scanLoc = ("", (0, 0)), scanStr = "b ", scanItem = LLabel "b" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = "c", scanItem = LLabel "c" }
+              , ScanItem { scanLoc = ("", (0, 0)), scanStr = ") ", scanItem = LParenthesisClose }
               , ScanItem { scanLoc = ("", (0, 0)), scanStr = "(", scanItem = LParenthesisOpen }
               , ScanItem { scanLoc = ("", (0, 0)), scanStr = "a", scanItem = LLabel "a" }
               , ScanItem { scanLoc = ("", (0, 0)), scanStr = ") ", scanItem = LParenthesisClose }
@@ -232,20 +236,20 @@ testConcatTokens =
       (scanCLineNoWS ("", (0, 0)) sourceCode >>= concatTokens)
         `shouldBe` scanCLineNoWS ("", (0, 0)) transformedCode
 
-testMacroTransform :: Spec
-testMacroTransform =
-  describe "macroTransform" $ do
+testMacroExpand :: Spec
+testMacroExpand =
+  describe "macroExpand" $ do
     it "replaces macro constans with relevant values" $ do
       let macroDict       = M.singleton "PI" $ MacroConstant "3.14"
           sourceCode      = "int area(int r) { return PI * r * r; }"
           transformedCode = "int area(int r) { return 3.14 * r * r; }"
-      (scanCLineNoWS ("", (0, 0)) sourceCode >>= macroTransform ("", (0, 0)) macroDict)
+      (scanCLineNoWS ("", (0, 0)) sourceCode >>= macroExpand ("", (0, 0)) macroDict)
         `shouldBe` scanCLineNoWS ("", (0, 0)) transformedCode
 
     it "replaces macro function invocations with relevant values" $ do
       let macroDict =
             M.fromList
-              [ ("PI", MacroConstant "3.14")
+              [ ( "PI", MacroConstant "3.14" )
               , ( "AREA"
                 , MacroFunction
                     ["r"]
@@ -266,7 +270,7 @@ testMacroTransform =
               ]
           sourceCode      = "int area = AREA(x+y);"
           transformedCode = "int area = (3.14 * (x+y) * (x+y));"
-      (scanCLineNoWS ("", (0, 0)) sourceCode >>= macroTransform ("", (0, 0)) macroDict)
+      (scanCLineNoWS ("", (0, 0)) sourceCode >>= macroExpand ("", (0, 0)) macroDict)
         `shouldBe` scanCLineNoWS ("", (0, 0)) transformedCode
 
     it "it re-expands macros containing macro values" $ do
@@ -277,7 +281,7 @@ testMacroTransform =
               ]
           sourceCode      = "int x = DOUBLEPI;"
           transformedCode = "int x = 2*3.14;"
-      (scanCLineNoWS ("", (0, 0)) sourceCode >>= macroTransform ("", (0, 0)) macroDict)
+      (scanCLineNoWS ("", (0, 0)) sourceCode >>= macroExpand ("", (0, 0)) macroDict)
         `shouldBe` scanCLineNoWS ("", (0, 0)) transformedCode
 
 testPPTransform :: Spec

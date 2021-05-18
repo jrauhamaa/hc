@@ -1,4 +1,6 @@
-module Lexeme where
+module Scanner.Lexeme where
+
+{- This module defines the lexemes for the scanner to scan -}
 
 data CLexeme
   -- preprocessor

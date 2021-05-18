@@ -1,4 +1,4 @@
-module PreProcess.PPParser where
+module PreProcess.Parser where
 
 {- A recursive descent parser for the C preprocessor.
    This is implemented separately from the main parser since the preprocessor
@@ -6,8 +6,7 @@ module PreProcess.PPParser where
 
 import Control.Applicative (Alternative(..))
 
-import Lexeme (CLexeme(..))
-import Scanner (ScanItem(..), Line)
+import Scanner (ScanItem(..), Line, CLexeme(..))
 import Utils (Location, Error(..), errorLoc)
 
 {- Read a list of lines (lists of lexemes) and return a tuple of
@@ -248,7 +247,6 @@ isMacroFunction' [ScanItem { scanItem = LParenthesisClose }] = False
 isMacroFunction' (ScanItem { scanItem = LParenthesisClose }:_) = True
 isMacroFunction' (_:rest) =
   isMacroFunction' rest
-
 
 defineParser :: PPParser PPDefine
 defineParser = nonEmptyLineParser $ PPParser $ \(line:rest) ->

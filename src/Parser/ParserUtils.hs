@@ -8,10 +8,11 @@ module Parser.ParserUtils where
 
 import Control.Applicative
 
-import Lexeme (CLexeme(..))
 import Parser.ParseItem
 import Utils (Location, Error(..), errorLoc)
-import Scanner (ScanItem(..))
+import Scanner ( ScanItem(..)
+               , CLexeme(..)
+               )
 
 -----------
 -- TYPES --
@@ -101,40 +102,40 @@ singlePWithValue readValue =
 intLiteralP :: PIParser Int
 intLiteralP =
   singlePWithValue $ \case
-    (ScanItem { scanLoc = l, scanItem = LIntLiteral x }) ->
+    ScanItem { scanLoc = l, scanItem = LIntLiteral x } ->
       return (ParseItem l x initialSymbols)
-    (ScanItem { scanLoc = l, scanItem = item }) ->
+    ScanItem { scanLoc = l, scanItem = item } ->
       Left . unexpectedLexeme l "LIntLiteral" $ show item
 
 floatLiteralP :: PIParser Double
 floatLiteralP =
   singlePWithValue $ \case
-    (ScanItem { scanLoc = l, scanItem = LFloatLiteral x }) ->
+    ScanItem { scanLoc = l, scanItem = LFloatLiteral x } ->
       return (ParseItem l x initialSymbols)
-    (ScanItem { scanLoc = l, scanItem = item }) ->
+    ScanItem { scanLoc = l, scanItem = item } ->
       Left . unexpectedLexeme l "LFloatLiteral" $ show item
 
 charLiteralP :: PIParser Char
 charLiteralP =
   singlePWithValue $ \case
-    (ScanItem { scanLoc = l, scanItem = LCharLiteral x }) ->
+    ScanItem { scanLoc = l, scanItem = LCharLiteral x } ->
       return (ParseItem l x initialSymbols)
-    (ScanItem { scanLoc = l, scanItem = item }) ->
+    ScanItem { scanLoc = l, scanItem = item } ->
       Left . unexpectedLexeme l "LCharLiteral" $ show item
 
 stringLiteralP :: PIParser String
 stringLiteralP =
   singlePWithValue $ \case
-    (ScanItem { scanLoc = l, scanItem = LStringLiteral x }) ->
+    ScanItem { scanLoc = l, scanItem = LStringLiteral x } ->
       return (ParseItem l x initialSymbols)
-    (ScanItem { scanLoc = l, scanItem = item }) ->
+    ScanItem { scanLoc = l, scanItem = item } ->
       Left . unexpectedLexeme l "LStringLiteral" $ show item
 
 labelP :: Parser String
 labelP =
   singlePWithValue $ \case
-    (ScanItem { scanItem = LLabel x }) -> return x
-    (ScanItem { scanLoc = l, scanItem = item }) ->
+    ScanItem { scanItem = LLabel x } -> return x
+    ScanItem { scanLoc = l, scanItem = item } ->
       Left . unexpectedLexeme l "LLabel" $ show item
 
 -- return Nothing instead of error if parsing fails
@@ -182,7 +183,8 @@ afterP before after =
       Parser $ \input ->
         let (begin, end) = splitAt n input
         in
-          case runParser before $ begin <> [ScanItem ("", (0, 0)) "" LEndMarker] of
+          case runParser before $
+                 begin <> [ScanItem ("", (0, 0)) "" LEndMarker] of
             Right ([ScanItem _ _ LEndMarker], e) ->
               case runParser after end of
                 Right _ -> Right (end, e)

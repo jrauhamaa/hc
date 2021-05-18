@@ -5,16 +5,19 @@ import Test.Hspec
 import Data.Either
 import System.IO
 
-import Parser
-import ParseItem
-import Lexeme
-import Scanner (scanCCode, ScanItem(..), filterWhiteSpace)
+import Parser.Parser
+import Parser.ParserUtils
+import Parser.ParseItem
+import Scanner (CLexeme(..), scanCCode, ScanItem(..))
 
 testParser :: IO ()
 testParser = do
   testFullSourceFile
   hspec testBadInput
   hspec testGoodInput
+
+filterWhiteSpace :: [ScanItem CLexeme] -> [ScanItem CLexeme]
+filterWhiteSpace = filter ((`notElem` [LWhiteSpace, LComment]) . scanItem)
 
 testFullSourceFile :: IO ()
 testFullSourceFile = do
@@ -28,7 +31,11 @@ testFullSourceFile = do
           context "when given valid input" $ do
             it "parses a c source file" $ do
               -- drop first 6 tokens (an include directive)
-              (scanCCode "" contents >>= parseCCode . drop 6 . filterWhiteSpace ) `shouldSatisfy` isRight
+              (scanCCode "" contents
+               >>= parseCCode
+                   . drop 6
+                   . filterWhiteSpace)
+                     `shouldSatisfy` isRight
 
 unterminatedBlock :: [ScanItem CLexeme]
 unterminatedBlock =
@@ -83,31 +90,28 @@ declarationParse =
                      parseItem =
                        CTypedefName
                          pItem { parseItem = CIdentifier "typedefname" }}}
-           pItem { parseItem = CDeclarationSpecifiersOptionalEmpty }}
-       pItem {
+           Nothing}
+       (Just (pItem {
          parseItem =
-           CInitDeclaratorListOptional
+           CInitDeclaratorList
              pItem {
                parseItem =
-                 CInitDeclaratorList
+                 CInitDeclarator
                    pItem {
                      parseItem =
-                       CInitDeclarator
+                       CDeclarator
+                         Nothing
                          pItem {
                            parseItem =
-                             CDeclarator
-                               pItem { parseItem = CPointerOptionalEmpty }
+                             CDirectDeclaratorId
                                pItem {
-                                 parseItem =
-                                   CDirectDeclaratorId
-                                     pItem {
-                                       parseItem = CIdentifier "variablename" }
-                                     pItem {
-                                       parseItem = CDirectDeclarator'Empty }}}
-                         pItem {
-                           parseItem =
-                             CAssignInitializerOptionalEmpty }}
-                   pItem { parseItem = CInitDeclaratorList'Empty }}}}
+                                 parseItem = CIdentifier "variablename" }
+                               pItem {
+                                 parseItem = CDirectDeclarator'Empty }}}
+                   pItem {
+                     parseItem =
+                       CAssignInitializerOptionalEmpty }}
+             pItem { parseItem = CInitDeclaratorList'Empty }}))}
 
 testGoodInput :: Spec
 testGoodInput =

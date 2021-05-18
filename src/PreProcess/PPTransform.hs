@@ -6,7 +6,7 @@ import qualified Data.Map as M
 import System.Directory (doesFileExist)
 import Data.List (intercalate)
 
-import PreProcess.PPParser
+import PreProcess.Parser
   ( PPTranslationUnit(..)
   , PPSourceLine(..)
   , PPDirective(..)
@@ -22,13 +22,23 @@ import PreProcess.PPParser
   , PPParser(..)
   )
 import PreProcess.PreTransform (preTransform)
-import PreProcess.Macro (MacroDict, macroExpand, Macro(..))
+import PreProcess.Macro ( MacroDict
+                        , macroExpand
+                        , Macro(..)
+                        )
 
-import Lexeme (CLexeme(..))
-import Scanner (ScanItem(..), Line)
-import Utils (Error(..), errorLoc, errorMsg)
-import ParseItem (ParseItem(..))
-import Parser (Parser(..), cConstantExpressionP)
+import Scanner ( ScanItem(..)
+               , Line
+               , CLexeme(..)
+               )
+import Utils ( Error(..)
+             , errorLoc
+             , errorMsg
+             )
+import Parser.ParseItem (ParseItem(..))
+import Parser ( Parser(..)
+              , cConstantExpressionP
+              )
 import IR (evaluateConstantExpression)
 
 -- Context for the line being preprocessed
@@ -170,7 +180,8 @@ preProcessCode fName sourceCode = do
       Context
         { fileName = fName
         , lineNum = 1
-        -- TODO: read documentation and find out the minimal required set of predefined macros
+        {- TODO: read documentation and find out the minimal required
+           set of predefined macros -}
         , macroSymbols =
             M.fromList
               [ ("__GNUC__", MacroConstant "-1")
@@ -185,7 +196,8 @@ preProcessCode' ctx sourceCode =
     Right ([], tUnit) ->
       ppTransformTranslationUnit ctx tUnit
     Right _ ->
-      return . Left . InternalError (fileName ctx, (1, 1)) $ "preprocessor failed parsing source code"
+      return . Left . InternalError (fileName ctx, (1, 1)) $
+        "preprocessor failed parsing source code"
     Left e ->
       return . Left $ e
   where
@@ -194,7 +206,8 @@ preProcessCode' ctx sourceCode =
 
 -- TODO: monad transformers
 ppTransformTranslationUnit :: PPTransform PPTranslationUnit
-ppTransformTranslationUnit ctx (PPTranslationUnit []) = return . return $ (ctx, [])
+ppTransformTranslationUnit ctx (PPTranslationUnit []) =
+  return . return $ (ctx, [])
 ppTransformTranslationUnit ctx (PPTranslationUnit (line:rest)) =  do
   transformedLine <- ppTransformSourceLine ctx line
   case transformedLine of
@@ -209,7 +222,10 @@ ppTransformTranslationUnit ctx (PPTranslationUnit (line:rest)) =  do
 ppTransformSourceLine :: PPTransform PPSourceLine
 ppTransformSourceLine ctx (PPSourceLineCodeLine line) = do
   print "transforming a source line"
-  case macroExpand (fileName ctx, (lineNum ctx, 1)) (macroSymbols ctx) (setLineContext line ctx) of
+  case macroExpand
+         (fileName ctx, (lineNum ctx, 1))
+         (macroSymbols ctx)
+         (setLineContext line ctx) of
     Left e -> return . Left $ e
     Right line' -> return . return $ (incrementLineNum ctx, [line'])
 ppTransformSourceLine ctx (PPSourceLineDirective directive) =
@@ -268,7 +284,7 @@ ppTransformUndef ctx (PPUndef name) = do
 ppTransformInclude :: PPTransform PPInclude
 ppTransformInclude ctx (PPIncludeLibrary name) = do
   print ("preprocessing <" ++ name ++ ">")
-  exists <- traverse doesFileExist (map (++ name) headerFileDirs)
+  exists <- traverse (doesFileExist . (++ name)) headerFileDirs
   let containingDirs = map snd $ filter fst (zip exists headerFileDirs)
   if not (null containingDirs)
     then do
@@ -283,7 +299,10 @@ ppTransformInclude ctx (PPIncludeLibrary name) = do
       case preProcessResult of
         Right (ctx', includedLines) -> do
           print ("done preprocessing " ++ name)
-          return . return $ (incrementLineNum (ctx { macroSymbols = macroSymbols ctx' }), includedLines)
+          return . return $
+            ( incrementLineNum (ctx { macroSymbols = macroSymbols ctx' })
+            , includedLines
+            )
         e -> return e
     else
       return . Left . PreProcessError (fileName ctx, (lineNum ctx, 1)) $
@@ -318,7 +337,8 @@ ppTransformInclude ctx (PPIncludeInternal name) = do
             )
         e -> return e
     else
-      return . Left . PreProcessError (fileName ctx, (lineNum ctx, 1)) $ "header file " ++ name ++ " doesn't exist"
+      return . Left . PreProcessError (fileName ctx, (lineNum ctx, 1)) $
+        "header file " ++ name ++ " doesn't exist"
 ppTransformInclude ctx (PPIncludeMacro line) =
   case macroExpand (fileName ctx, (lineNum ctx, 1)) (macroSymbols ctx) line of
     Left e -> return . Left $ e
@@ -362,7 +382,7 @@ ppTransformElif ppelse ctx (Just (PPElif line body ppelif)) = do
             ctx { lineNum = lineNum ctx + 1 + length body }
             ppelif
     Left e ->
-      return . Left . PreProcessError (errorLoc e) $ (errorMsg e) -- ++ " ctx: " ++ show ctx
+      return . Left . PreProcessError (errorLoc e) $ errorMsg e
 
 ppTransformIf :: PPTransform PPIf
 ppTransformIf ctx (PPIfdef name body ppelif ppelse) = do
@@ -389,7 +409,7 @@ ppTransformIf ctx (PPIf conditionLine body ppelif ppelse) = do
         else
           ppTransformElif ppelse ctx ppelif
     Left e ->
-      return . Left . PreProcessError (errorLoc e) $ (errorMsg e) -- ++ " ctx: " ++ show ctx
+      return . Left . PreProcessError (errorLoc e) $ errorMsg e
 
 ppTransformLine :: PPTransform PPLine
 ppTransformLine ctx (PPLine n) = do
@@ -416,6 +436,9 @@ ppTransformError ctx (PPErrorMacro line) = do
   print "transforming error"
   case macroExpand (fileName ctx, (lineNum ctx, 1)) (macroSymbols ctx) line of
     Right line' ->
-      return .  Left . PreProcessError (fileName ctx, (lineNum ctx, 1)) . concatMap scanStr $ line'
+      return . Left
+             . PreProcessError (fileName ctx, (lineNum ctx, 1))
+             . concatMap scanStr
+             $ line'
     Left e -> return . Left $ e
 

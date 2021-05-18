@@ -1,6 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 
-module Parser.Symbols where
+module Symbols.TypeReader where
 
 {- This module contains functions for parsing type definitions from
    the parse tree -}
@@ -184,7 +184,8 @@ validateFunctionStorageClasses l spec =
 
 {- Transform TypeQualifierList node in parse tree to an actual list
    of type qualifiers -}
-readTypeQualifiers :: Location -> CTypeQualifierList -> Either Error [TypeQualifier]
+readTypeQualifiers ::
+     Location -> CTypeQualifierList -> Either Error [TypeQualifier]
 readTypeQualifiers l qualifierList = do
   let qualifiers = readTypeQualifiers' qualifierList
   validateTypeQualifiers l qualifiers
@@ -283,7 +284,8 @@ readCType l sym spec = do
       , dataType = dType
       }
 
--- Extract typedef labels from a declaration specifier list or an empty list if given
+{- Extract typedef labels from a declaration specifier list or an empty list
+   if given -}
 readDeclarationSpecifiersTypedef ::
      Location
   -> SymbolTable
@@ -340,7 +342,7 @@ readDeclarationSpecifiersTypedef l sym spec = do
 
 {- Read a single value from an enumerator declaration together with
    its associated integer value if defined -}
-readEnumerator :: CEnumerator -> Either Error (String, (Maybe Int))
+readEnumerator :: CEnumerator -> Either Error (String, Maybe Int)
 readEnumerator (CEnumerator identifier) = return (i, Nothing)
   where (CIdentifier i) = parseItem identifier
 readEnumerator (CEnumeratorAssign identifier constExpr) = do
@@ -393,7 +395,7 @@ readEnumSpecifier _ _ (CEnumSpecifierList cId enumList) = do
   enumValues <- readEnumeratorList (parseItem enumList)
   let identifier = case cId of
                      Nothing -> Nothing
-                     Just (ParseItem { parseItem = CIdentifier i }) -> Just i
+                     Just ParseItem { parseItem = CIdentifier i } -> Just i
   return . TEnum identifier $ enumValues
 
 -- Read a struct or union specification.
@@ -665,9 +667,9 @@ readFunctionDeclarationOldStyle
        Left . InternalError l $ -- this shouldn't happen
          "Internal error parsing function parameter types"
      Just paramTypes' ->
-       if (S.fromList paramNames == S.fromList (map (\(_, k, _) -> k) params)) &&
-          (length (S.fromList paramNames) == length paramNames) &&
-          all (\(initialized, _, _) -> not initialized) params
+       if (S.fromList paramNames == S.fromList (map (\(_, k, _) -> k) params))
+          && (length (S.fromList paramNames) == length paramNames)
+          && all (\(initialized, _, _) -> not initialized) params
          then return
                 ( fName
                 , CType
@@ -743,10 +745,15 @@ readFunctionDeclaration
 {- Read a function definition. Return a tuple of function name, function type
    (return type & argument types) & a list of argument names -}
 readFunctionDefinition ::
-     Location -> SymbolTable -> CFunctionDefinition -> Either Error (String, CType, [String])
+     Location
+  -> SymbolTable
+  -> CFunctionDefinition
+  -> Either Error (String, CType, [String])
 readFunctionDefinition l sym item@(CFunctionDefinition Nothing _ _ _) =
   readFunctionDeclaration l sym returnType item
-  where returnType = CType {storageClass = [], typeQualifier = [], dataType = TShort}
+  where
+    returnType =
+      CType {storageClass = [], typeQualifier = [], dataType = TShort}
 readFunctionDefinition
      l sym item@(CFunctionDefinition (Just specifiers) _ _ _) = do
   returnType <- readCType (parseLoc specifiers) sym (parseItem specifiers)
@@ -1037,7 +1044,7 @@ readIdentifierList
      (CIdentifierList
        ParseItem { parseItem = (CIdentifier identifier) }
        idList') =
-  identifier : (readIdentifierList' $ parseItem idList')
+  identifier : readIdentifierList' (parseItem idList')
 
 readIdentifierList' :: CIdentifierList' -> [String]
 readIdentifierList' CIdentifierList'Empty = []
@@ -1045,5 +1052,5 @@ readIdentifierList'
      (CIdentifierList'
        ParseItem { parseItem = CIdentifier identifier }
        idList') =
-  identifier : (readIdentifierList' $ parseItem idList')
+  identifier : readIdentifierList' (parseItem idList')
 

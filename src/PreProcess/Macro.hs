@@ -6,9 +6,14 @@ import qualified Data.Map as M
 import Data.Char (isSpace)
 
 import PreProcess.PreTransform (removeWhitespace)
-import Scanner (ScanItem(..), Line, scanCLine)
-import Lexeme (CLexeme(..))
-import Utils (Error(..), Location)
+import Scanner ( ScanItem(..)
+               , Line
+               , scanCLine
+               , CLexeme(..)
+               )
+import Utils ( Error(..)
+             , Location
+             )
 
 data Macro
   = MacroConstant String
@@ -72,7 +77,7 @@ readMacroArgParens :: Location -> Line -> Either Error (Line, Line)
 readMacroArgParens l (item@ScanItem {scanItem = LParenthesisOpen}:rest) = do
   (argTail, rest') <- readMacroArgParens' l 1 rest
   return (item:argTail, rest')
-readMacroArgParens l (_) =
+readMacroArgParens l _ =
   Left . PreProcessError l $ "error parsing a macro argument"
 
 readMacroArgParens' :: Location -> Int -> Line -> Either Error (Line, Line)
@@ -145,7 +150,7 @@ macroExpand' m (lItem@ScanItem { scanStr = s, scanItem = LLabel label }:rest) =
           if length args == length args'
             then do
               lineTail <- macroExpand' m afterMacro
-              return $ (evaluateMacroFunction func args') ++ lineTail
+              return $ evaluateMacroFunction func args' ++ lineTail
             else
               Left $ PreProcessError
                        (scanLoc lItem)

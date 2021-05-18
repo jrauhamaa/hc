@@ -6,8 +6,9 @@ import Control.Applicative
 
 import Parser.ParseItem
 import Parser.ParserUtils
-import Lexeme (CLexeme(..))
-import Scanner (ScanItem(..))
+import Scanner ( ScanItem(..)
+               , CLexeme(..)
+               )
 import Utils (Error(..))
 
 -- TODO: include filename in the error
@@ -16,7 +17,8 @@ parseCCode input = do
   (notParsed, result) <- runParser cParser input
   if null notParsed
     then return result
-    else Left . ParseError ("", (1, 1)) $ "Parser failed to consume entire input"
+    else Left . ParseError ("", (1, 1)) $
+           "Parser failed to consume entire input"
 
 -- main parser
 cParser :: PIParser CTranslationUnit
@@ -46,7 +48,7 @@ cFunctionDefinitionP =
   CFunctionDefinition <$>
   cFunctionSpecifiersP <*>
   cDeclaratorP <*>
-  (optionalParser cDeclarationListP) <*>
+  optionalParser cDeclarationListP <*>
   cCompoundStatementP
 
 -- interpret LLabel before open parenthesis as function name
@@ -86,7 +88,7 @@ cDeclarationP =
     CDeclaration
     (afterP cDeclarationSpecifiersP after)
     after
-  where after = (optionalParser cInitDeclaratorListP) <* singleP LSemiColon
+  where after = optionalParser cInitDeclaratorListP <* singleP LSemiColon
 
 cDeclarationListP :: PIParser CDeclarationList
 cDeclarationListP =
@@ -283,7 +285,8 @@ cEnumeratorP =
 
 cDeclaratorP :: PIParser CDeclarator
 cDeclaratorP =
-  parserToPIParser $ liftA2 CDeclarator (optionalParser cPointerP) cDirectDeclaratorP
+  parserToPIParser . liftA2 CDeclarator (optionalParser cPointerP) $
+    cDirectDeclaratorP
 
 cDirectDeclaratorP :: PIParser CDirectDeclarator
 cDirectDeclaratorP =
@@ -320,7 +323,7 @@ cPointerP =
   parserToPIParser $
   liftA2
     CPointer
-    (singleP LStar *> (optionalParser cTypeQualifierListP))
+    (singleP LStar *> optionalParser cTypeQualifierListP)
     (optionalParser cPointerP)
 
 cTypeQualifierListP :: PIParser CTypeQualifierList
@@ -375,7 +378,7 @@ cParameterDeclarationP' :: PIParser CParameterDeclaration'
 cParameterDeclarationP' =
   parserToPIParser $
   CParameterDeclaration' <$> cDeclaratorP <|>
-  CParameterDeclaration'Abstract <$> (optionalParser cAbstractDeclaratorP)
+  CParameterDeclaration'Abstract <$> optionalParser cAbstractDeclaratorP
 
 cIdentifierListP :: PIParser CIdentifierList
 cIdentifierListP =
@@ -497,7 +500,7 @@ cExpressionStatementP =
   parserToPIParser $
   fmap
     CExpressionStatement
-    ((optionalParser cExpressionP) <* singleP LSemiColon)
+    (optionalParser cExpressionP <* singleP LSemiColon)
 
 cCompoundStatementP :: PIParser CCompoundStatement
 cCompoundStatementP =
@@ -547,18 +550,22 @@ cIterationStatementP =
     (singleP LDo *> cStatementP)
     (singleP LWhile *> parenthesisP cExpressionP <* singleP LSemiColon) <|>
   CIterationStatementFor <$>
-  (singleP LFor *> singleP LParenthesisOpen *> (optionalParser cExpressionP)) <*>
-  (singleP LSemiColon *> (optionalParser cExpressionP)) <*>
-  (singleP LSemiColon *> (optionalParser cExpressionP) <* singleP LParenthesisClose) <*>
+  (singleP LFor *> singleP LParenthesisOpen *> optionalParser cExpressionP) <*>
+  (singleP LSemiColon *> optionalParser cExpressionP) <*>
+  (singleP LSemiColon *>
+   optionalParser cExpressionP
+   <* singleP LParenthesisClose) <*>
   cStatementP
 
 cJumpStatementP :: PIParser CJumpStatement
 cJumpStatementP =
   parserToPIParser $
-  CJumpStatementGoto <$> (singleP LGoto *> cIdentifierP <* singleP LSemiColon) <|>
+  CJumpStatementGoto <$>
+    (singleP LGoto *> cIdentifierP <* singleP LSemiColon) <|>
   CJumpStatementContinue <$ singleP LContinue <* singleP LSemiColon <|>
   CJumpStatementBreak <$ singleP LBreak <* singleP LSemiColon <|>
-  CJumpStatementReturn <$> (singleP LReturn *> (optionalParser cExpressionP) <* singleP LSemiColon)
+  CJumpStatementReturn <$>
+    (singleP LReturn *> optionalParser cExpressionP <* singleP LSemiColon)
 
 cExpressionP :: PIParser CExpression
 cExpressionP =
@@ -855,7 +862,8 @@ cUnaryExpressionP =
   parserToPIParser $
   CUnaryExpressionInc <$> (singleP LIncrement *> cUnaryExpressionP) <|>
   CUnaryExpressionDec <$> (singleP LDecrement *> cUnaryExpressionP) <|>
-  CUnaryExpressionSizeofType <$> (singleP LSizeof *> parenthesisP cTypeNameP) <|>
+  CUnaryExpressionSizeofType <$>
+    (singleP LSizeof *> parenthesisP cTypeNameP) <|>
   CUnaryExpressionSizeof <$> (singleP LSizeof *> cUnaryExpressionP) <|>
   CUnaryExpressionUnaryOp <$> cUnaryOperatorP <*> cCastExpressionP <|>
   CUnaryExpressionPostfix <$> cPostfixExpressionP

@@ -5,13 +5,12 @@ import Test.Hspec
 import Data.Either
 import qualified Data.Map as M
 
-import Lexeme
 import Utils
-import TypeCheck
-import Symbols
+import Symbols.TypeReader
 import Scanner
-import Parser
-import ParseItem
+import Parser.Parser
+import Parser.ParserUtils
+import Parser.ParseItem
 
 testSymbols :: IO ()
 testSymbols = do
@@ -53,28 +52,14 @@ testFunctionDefinition =
         let inputSource = "int main (int argc, char* argv[]) { return 0; }"
             scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine ("", (0, 0)) inputSource
             ast = (\(_, i) -> i) <$> (scanItems >>= runParser cFunctionDefinitionP)
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readFunctionDefinition)
+        (ast >>= readFunctionDefinition ("", (0, 0)) initialSymbols . parseItem)
           `shouldBe` Right ("main", mainFunctionType, ["argc", "argv"])
 
       it "reads an old style function type" $ do
         let inputSource = "int main (argc, argv) int argc; char* argv[]; { return 0; }"
             scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine ("", (0, 0)) inputSource
             ast = (\(_, i) -> i) <$> (scanItems >>= runParser cFunctionDefinitionP)
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readFunctionDefinition)
+        (ast >>= readFunctionDefinition ("", (0, 0)) initialSymbols . parseItem)
           `shouldBe` Right ("main", mainFunctionType, ["argc", "argv"])
 
       it "reads a function with no args" $ do
@@ -92,14 +77,7 @@ testFunctionDefinition =
                     []
                     False
                 }
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readFunctionDefinition)
+        (ast >>= readFunctionDefinition ("", (0, 0)) initialSymbols . parseItem)
           `shouldBe` Right ("main", expectedType, [])
 
     context "when given bad input" $ do
@@ -107,27 +85,13 @@ testFunctionDefinition =
         let inputSource = "int main (int foo, char foo) { return 0; }"
             scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine ("", (0, 0)) inputSource
             ast = (\(_, i) -> i) <$> (scanItems >>= runParser cFunctionDefinitionP)
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readFunctionDefinition) `shouldSatisfy` isLeft
+        (ast >>= readFunctionDefinition ("", (0, 0)) initialSymbols . parseItem) `shouldSatisfy` isLeft
 
       it "rejects function with a struct return type" $ do
         let inputSource = "struct { int foo; } main () { return 0; }"
             scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine ("", (0, 0)) inputSource
             ast = (\(_, i) -> i) <$> (scanItems >>= runParser cFunctionDefinitionP)
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readFunctionDefinition) `shouldSatisfy` isLeft
+        (ast >>= readFunctionDefinition ("", (0, 0)) initialSymbols . parseItem) `shouldSatisfy` isLeft
 
 testDeclaration :: Spec
 testDeclaration =
@@ -143,14 +107,7 @@ testDeclaration =
                 , typeQualifier = []
                 , dataType = TShort
                 }
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readDeclaration)
+        (ast >>= readDeclaration initialSymbols . parseItem)
           `shouldBe` Right (False, [(False, "foo", expectedType)])
 
       it "reads a variable declaration with assignment" $ do
@@ -163,14 +120,7 @@ testDeclaration =
                 , typeQualifier = []
                 , dataType = TShort
                 }
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readDeclaration)
+        (ast >>= readDeclaration initialSymbols . parseItem)
           `shouldBe` Right (False, [(True, "foo", expectedType)])
 
       it "reads a multiple variable declaration" $ do
@@ -183,14 +133,7 @@ testDeclaration =
                 , typeQualifier = [TQConst]
                 , dataType = TShort
                 }
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readDeclaration)
+        (ast >>= readDeclaration initialSymbols . parseItem)
           `shouldBe` Right (False, [(True, "foo", expectedType), (True, "bar", expectedType)])
 
       it "reads an enum declaration" $ do
@@ -204,16 +147,9 @@ testDeclaration =
                 , dataType =
                     TEnum
                       (Just "foo")
-                      (M.fromList [("FOO", 1), ("BAR", 1), ("BAZ", 1)])
+                      (M.fromList [("FOO", 1), ("BAR", 2), ("BAZ", 3)])
                 }
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readDeclaration)
+        (ast >>= readDeclaration initialSymbols . parseItem)
           `shouldBe` Right (False, [(False, "foo", expectedType)])
 
       it "reads an union declaration" $ do
@@ -242,14 +178,7 @@ testDeclaration =
                           )
                         ])
                 }
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readDeclaration)
+        (ast >>= readDeclaration initialSymbols . parseItem)
           `shouldBe` Right (False, [(False, "foo", expectedType)])
 
       it "reads a struct declaration" $ do
@@ -279,14 +208,7 @@ testDeclaration =
                         )
                       ]
                 }
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readDeclaration)
+        (ast >>= readDeclaration initialSymbols . parseItem)
           `shouldBe` Right (False, [(False, "foo", expectedType)])
 
       it "reads a function declaration" $ do
@@ -315,14 +237,7 @@ testDeclaration =
                       ]
                       False
                 }
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readDeclaration)
+        (ast >>= readDeclaration initialSymbols . parseItem)
           `shouldBe` Right (False, [(False, "foo", expectedType)])
 
       it "reads a function declaration with variable names" $ do
@@ -351,14 +266,7 @@ testDeclaration =
                       ]
                       False
                 }
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readDeclaration)
+        (ast >>= readDeclaration initialSymbols . parseItem)
           `shouldBe` Right (False, [(False, "foo", expectedType)])
 
     context "when given bad input" $ do
@@ -366,26 +274,12 @@ testDeclaration =
         let inputSource = "struct foo { int bar; float bar; };"
             scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine ("", (0, 0)) inputSource
             ast = (\(_, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readDeclaration) `shouldSatisfy` isLeft
+        (ast >>= readDeclaration initialSymbols . parseItem) `shouldSatisfy` isLeft
 
     context "when given bad input" $ do
       it "rejects a function with struct as return type" $ do
         let inputSource = "struct { int foo; } bar (int baz);"
             scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCLine ("", (0, 0)) inputSource
             ast = (\(_, i) -> i) <$> (scanItems >>= runParser cDeclarationP)
-            tcItem =
-              (\i -> TypeCheckItem
-                       { typeCheckSymbols = initialSymbols
-                       , previousType = emptyType
-                       , typeCheckLoc = ("", (0, 0))
-                       , typeCheckItem = parseItem i
-                       }) <$> ast
-        (tcItem >>= readDeclaration) `shouldSatisfy` isLeft
+        (ast >>= readDeclaration initialSymbols . parseItem) `shouldSatisfy` isLeft
 

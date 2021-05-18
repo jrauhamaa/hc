@@ -6,15 +6,16 @@ import Data.Either
 import qualified Data.Map as M
 
 import Utils
-import ParseItem
-import Lexeme
-import TypeCheck
+import Parser.ParseItem
+import Symbols
+import Symbols.TypeAnnotate
 import Scanner
 import Parser
+import Parser.Parser
 
 testTypeCheck :: IO ()
 testTypeCheck = hspec $ do
-  describe "typeCheck" $ do
+  describe "typeAnnotate" $ do
     context "when given good input" $ do
       it "accepts valid c source code" $ do
         let sourceCode = "float foo = 1; int main (int argc, char* argv[]) { return 0; }\n"
@@ -45,7 +46,7 @@ testTypeCheck = hspec $ do
                         False)
                   )
                 ]
-        symbols . symbolTable <$> (ast >>= typeCheck)
+        symbols . symbolTable <$> (ast >>= typeAnnotate)
           `shouldBe` Right expectedSymbols
 
       it "reads enum declarations" $ do
@@ -61,7 +62,7 @@ testTypeCheck = hspec $ do
                   (TEnum
                     (Just "foo")
                     (M.fromList [("FOO", 1), ("BAR", 1), ("BAZ", 1)])))
-        enums . symbolTable <$> (ast >>= typeCheck)
+        enums . symbolTable <$> (ast >>= typeAnnotate)
           `shouldBe` Right expectedSymbols
 
       it "reads union declarations" $ do
@@ -80,7 +81,7 @@ testTypeCheck = hspec $ do
                       [ ("bar", CType [] [] TShort)
                       , ("baz", CType [] [] TFloat)
                       ])))
-        unions . symbolTable <$> (ast >>= typeCheck)
+        unions . symbolTable <$> (ast >>= typeAnnotate)
           `shouldBe` Right expectedSymbols
 
       it "reads struct declarations" $ do
@@ -98,7 +99,7 @@ testTypeCheck = hspec $ do
                     [ (CType [] [] TShort, Just "bar", Nothing)
                     , (CType [] [] TFloat, Just "baz", Nothing)
                     ]))
-        structs . symbolTable <$> (ast >>= typeCheck)
+        structs . symbolTable <$> (ast >>= typeAnnotate)
           `shouldBe` Right expectedSymbols
 
       it "reads typedef declarations" $ do
@@ -114,16 +115,16 @@ testTypeCheck = hspec $ do
                     [ (CType [] [] TShort, Just "bar", Nothing)
                     , (CType [] [] TFloat, Just "baz", Nothing)
                     ])
-        typedef . symbolTable <$> (ast >>= typeCheck)
+        typedef . symbolTable <$> (ast >>= typeAnnotate)
           `shouldBe` Right (M.singleton "qux" expectedType)
-        structs . symbolTable <$> (ast >>= typeCheck)
+        structs . symbolTable <$> (ast >>= typeAnnotate)
           `shouldBe` Right (M.singleton "foo" expectedType)
 
       it "accepts overlapping labels in different scopes" $ do
         let sourceCode = "float argc = 1.1; char foo = '1'; int main (int argc, char* argv[]) { int foo = 2; return 0; }"
             scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCCode "" sourceCode
             ast = scanItems >>= parseCCode
-        (ast >>= typeCheck) `shouldSatisfy` isRight
+        (ast >>= typeAnnotate) `shouldSatisfy` isRight
 
 
       it "reads labels" $ do
@@ -137,7 +138,7 @@ testTypeCheck = hspec $ do
               case parseItem <$> typeCheckedAst of
                 Left e -> Left e
                 Right (CCompoundStatement _ statements') -> Right statements'
-        labels . symbolTable <$> statements `shouldBe` Right expectedLabels
+        fmap (labels . symbolTable) <$> statements `shouldBe` Right (Just expectedLabels)
 
 
     context "when given bad input" $ do
@@ -145,11 +146,11 @@ testTypeCheck = hspec $ do
         let sourceCode = "float main = 1.1; int main (int argc, char* argv[]) { return 0; }"
             scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCCode "" sourceCode
             ast = scanItems >>= parseCCode
-        (ast >>= typeCheck) `shouldSatisfy` isLeft
+        (ast >>= typeAnnotate) `shouldSatisfy` isLeft
 
       it "rejects code with variable name collisions inside a function" $ do
         let sourceCode = "int main (int argc, char* argv[]) { int foo = 0; char foo = '0'; return 0; }"
             scanItems = filter (\i -> scanItem i /= LWhiteSpace) <$> scanCCode "" sourceCode
             ast = scanItems >>= parseCCode
-        (ast >>= typeCheck) `shouldSatisfy` isLeft
+        (ast >>= typeAnnotate) `shouldSatisfy` isLeft
 
