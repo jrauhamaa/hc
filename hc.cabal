@@ -17,18 +17,20 @@ maintainer:          johannes.rauhamaa@iki.fi
 
 library
   exposed-modules:     Config
-                     , IR
+                     , IR.ConstantExpression
                      , Lexeme
-                     , ParseItem
                      , Parser
+                     , Parser.Parser
+                     , Parser.ParserUtils
+                     , Parser.ParseItem
+                     , Parser.Symbols
                      , PreProcess
-                     , PreProcess.PPParser
+                     , PreProcess.Parser
                      , PreProcess.Macro
                      , PreProcess.PPTransform
                      , PreProcess.PreTransform
                      , Scanner
-                     , Symbols
-                     , TypeCheck
+                     -- , TypeCheck
                      , Utils
   -- other-modules:       TestScanner
   -- other-extensions:
@@ -71,7 +73,6 @@ test-suite tests
                      , PreProcess.PPTransform
                      , PreProcess.PreTransform
                      , Scanner
-                     , Symbols
                      , TypeCheck
                      , Utils
   build-depends:       base
