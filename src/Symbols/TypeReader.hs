@@ -284,58 +284,6 @@ readCType l sym spec = do
       , dataType = dType
       }
 
-{- Extract typedef labels from a declaration specifier list or an empty list
-   if given -}
-readDeclarationSpecifiersTypedef ::
-     Location
-  -> SymbolTable
-  -> CDeclarationSpecifiers
-  -> Either Error ([String], CType)
-readDeclarationSpecifiersTypedef l sym spec = do
-  (storageClasses, typeQualifiers, typeSpecifiers) <-
-    readDeclarationSpecifierList l spec
-  if storageClasses == [SCTypedef]
-    then do
-      -- validate type specifiers that aren't typedef names (typedef names
-      -- are required to appear at the end of the type specifier list)
-      dType <- readDatatype l sym
-               . dropWhile (not . isTypedefName)
-               . reverse
-               $ typeSpecifiers
-      let typedefLabels = map getTypedefName
-                          . takeWhile isTypedefName
-                          . reverse
-                          $ typeSpecifiers
-      if null typedefLabels
-        then
-          Left . SyntaxError l $ "typedef declaration without a typedef label"
-        else
-          return
-            ( typedefLabels
-            , CType
-                { storageClass = []
-                , typeQualifier = typeQualifiers
-                , dataType = dType
-                }
-            )
-    else do
-      dType <- readDatatype l sym typeSpecifiers
-      return ([], CType { storageClass = storageClasses
-                        , typeQualifier = typeQualifiers
-                        , dataType = dType
-                        })
-  where
-    isTypedefName x =
-      case x of
-        CTypeSpecifierTypedef _ -> True
-        _ -> False
-    getTypedefName (CTypeSpecifierTypedef typedefName) =
-      i
-      where
-        (CTypedefName identifier) = parseItem typedefName
-        (CIdentifier i) = parseItem identifier
-    getTypedefName _ = error "Internal error"
-
 ----------------------
 -- STRUCTURED TYPES --
 ----------------------
@@ -446,23 +394,23 @@ readStructDeclarator ::
   -> CType
   -> CStructDeclarator
   -> Either Error (CType, Maybe String, Maybe Int)
-readStructDeclarator sym previousType (CStructDeclarator decl) = do
-  (identifier, t) <- readDeclarator sym previousType (parseItem decl)
+readStructDeclarator sym partialType (CStructDeclarator decl) = do
+  (identifier, t) <- readDeclarator sym partialType (parseItem decl)
   return (t, Just identifier, Nothing)
 readStructDeclarator
-     sym previousType (CStructDeclaratorField declOpt constExpr) =
+     sym partialType (CStructDeclaratorField declOpt constExpr) =
   case declOpt of
     Nothing -> do
       fieldWidth <-
         evaluateConstantExpression (parseItem constExpr)
           >>= doubleToInteger (parseLoc constExpr)
-      return (previousType, Nothing, Just fieldWidth)
+      return (partialType, Nothing, Just fieldWidth)
     (Just decl) -> do
       fieldWidth <-
         evaluateConstantExpression (parseItem constExpr)
           >>= doubleToInteger (parseLoc constExpr)
-      (identifier, t) <- readDeclarator sym previousType (parseItem decl)
-      return (t, Just identifier, Just fieldWidth)
+      (identifier, t') <- readDeclarator sym partialType (parseItem decl)
+      return (t', Just identifier, Just fieldWidth)
 
 {- Read a list of struct field labels. Return a list of tuples of
    field type, label (if defined) & field width (if defined). -}
@@ -471,9 +419,9 @@ readStructDeclaratorList ::
   -> CType
   -> CStructDeclaratorList
   -> Either Error [(CType, Maybe String, Maybe Int)]
-readStructDeclaratorList sym previousType (CStructDeclaratorList decl list) = do
-  d <- readStructDeclarator sym previousType (parseItem decl)
-  listTail <- readStructDeclaratorList' sym previousType (parseItem list)
+readStructDeclaratorList sym partialType (CStructDeclaratorList decl list) = do
+  d <- readStructDeclarator sym partialType (parseItem decl)
+  listTail <- readStructDeclaratorList' sym partialType (parseItem list)
   return (d : listTail)
 
 readStructDeclaratorList' ::
@@ -483,9 +431,9 @@ readStructDeclaratorList' ::
   -> Either Error [(CType, Maybe String, Maybe Int)]
 readStructDeclaratorList' _ _ CStructDeclaratorList'Empty = return []
 readStructDeclaratorList'
-     sym previousType (CStructDeclaratorList' decl list) = do
-  d <- readStructDeclarator sym previousType (parseItem decl)
-  listTail <- readStructDeclaratorList' sym previousType (parseItem list)
+     sym partialType (CStructDeclaratorList' decl list) = do
+  d <- readStructDeclarator sym partialType (parseItem decl)
+  listTail <- readStructDeclaratorList' sym partialType (parseItem list)
   return (d : listTail)
 
 {- Read a struct field declaration of single type (possibly multiple labels).
@@ -549,17 +497,17 @@ readParamTypeList sym (CParameterTypeList paramList varargs) = do
 readParamList ::
      SymbolTable -> CParameterList -> Either Error [(Maybe String, CType)]
 readParamList sym (CParameterList decl list) = do
-  t <- readParamDeclaration sym (parseItem decl)
+  declaration <- readParamDeclaration sym (parseItem decl)
   listTail <- readParamList' sym (parseItem list)
-  return $ t : listTail
+  return $ declaration : listTail
 
 readParamList' ::
      SymbolTable -> CParameterList' -> Either Error [(Maybe String, CType)]
 readParamList' _ CParameterList'Empty = return []
 readParamList' sym (CParameterList' decl list) = do
-  t <- readParamDeclaration sym (parseItem decl)
+  declaration <- readParamDeclaration sym (parseItem decl)
   listTail <- readParamList' sym (parseItem list)
-  return $ t : listTail
+  return $ declaration : listTail
 
 {- Read declaration of a single function parameter.
    Return a tuple of parameter name (if defined) & parameter type. -}
@@ -568,21 +516,22 @@ readParamDeclaration ::
 readParamDeclaration sym (CParameterDeclaration specifiers paramDecl) =
   case parseItem paramDecl of
     CParameterDeclaration' decl -> do
-      t <- readCType (parseLoc specifiers) sym (parseItem specifiers)
-      (identifier, t') <- readDeclarator sym t (parseItem decl)
-      return (Just identifier, t')
+      partialType <- readCType (parseLoc specifiers) sym (parseItem specifiers)
+      (identifier, paramType) <-
+        readDeclarator sym partialType (parseItem decl)
+      return (Just identifier, paramType)
     CParameterDeclaration'Abstract Nothing -> do
-      t <- readCType (parseLoc specifiers) sym (parseItem specifiers)
-      return (Nothing, t)
+      paramType <- readCType (parseLoc specifiers) sym (parseItem specifiers)
+      return (Nothing, paramType)
     CParameterDeclaration'Abstract (Just abstractDecl) -> do
-      t <- readCType (parseLoc specifiers) sym (parseItem specifiers)
-      t' <- readAbstractDeclarator t (parseItem abstractDecl)
-      return (Nothing, t')
+      partialType <- readCType (parseLoc specifiers) sym (parseItem specifiers)
+      paramType <- readAbstractDeclarator partialType (parseItem abstractDecl)
+      return (Nothing, paramType)
 
 -- Check if function return types conforms to specification
 validateFunctionReturnType :: Location -> CType -> Either Error ()
-validateFunctionReturnType l t =
-  case dataType t of
+validateFunctionReturnType l returnType =
+  case dataType returnType of
     TFunction {} -> Left . SyntaxError l $ "invalid function return type"
     TStruct _ _ -> Left . SyntaxError l $ "invalid function return type"
     _ -> return ()
@@ -700,7 +649,7 @@ readFunctionDeclaration ::
 readFunctionDeclaration
      l
      sym
-     previousType
+     partialReturnType
      (CFunctionDefinition
        _
        ParseItem
@@ -715,14 +664,14 @@ readFunctionDeclaration
     CDirectDeclaratorParen _ _ ->
       Left . SyntaxError l $ "Invalid function declaration"
     CDirectDeclaratorId cId decl' -> do
-      returnType <- readPointerOptional previousType pointerOpt
+      returnType <- readPointerOptional partialReturnType pointerOpt
       let CIdentifier fName = parseItem cId
       readFunctionDeclarationNewStyle l sym returnType fName (parseItem decl')
 -- old style
 readFunctionDeclaration
      l
      sym
-     previousType
+     partialReturnType
      (CFunctionDefinition
         _
         ParseItem
@@ -737,7 +686,7 @@ readFunctionDeclaration
     CDirectDeclaratorParen _ _ ->
       Left . SyntaxError l $ "Invalid function declaration"
     CDirectDeclaratorId cId decl' -> do
-      returnType <- readPointerOptional previousType pointerOpt
+      returnType <- readPointerOptional partialReturnType pointerOpt
       let CIdentifier fName = parseItem cId
       readFunctionDeclarationOldStyle
         l sym returnType fName (parseItem decl') (parseItem declList)
@@ -770,9 +719,12 @@ readInitDeclarator ::
   -> CType
   -> CInitDeclarator
   -> Either Error (Bool, String, CType)
-readInitDeclarator sym previousType (CInitDeclarator decl initOpt) = do
-  (identifier, t) <- readDeclarator sym previousType (parseItem decl)
-  return (parseItem initOpt /= CAssignInitializerOptionalEmpty, identifier, t)
+readInitDeclarator sym partialType (CInitDeclarator decl initOpt) = do
+  (identifier, variableType) <- readDeclarator sym partialType (parseItem decl)
+  return ( parseItem initOpt /= CAssignInitializerOptionalEmpty
+         , identifier
+         , variableType
+         )
 
 {- Read a list of init declarators. Return a list of tuples of
    a boolean value indicating if this code line initializes the variable,
@@ -782,9 +734,9 @@ readInitDeclaratorList ::
   -> CType
   -> CInitDeclaratorList
   -> Either Error [(Bool, String, CType)]
-readInitDeclaratorList sym previousType (CInitDeclaratorList decl list) = do
-  d <- readInitDeclarator sym previousType (parseItem decl)
-  listTail <- readInitDeclaratorList' sym previousType (parseItem list)
+readInitDeclaratorList sym partialType (CInitDeclaratorList decl list) = do
+  d <- readInitDeclarator sym partialType (parseItem decl)
+  listTail <- readInitDeclaratorList' sym partialType (parseItem list)
   return (d : listTail)
 
 readInitDeclaratorList' ::
@@ -793,10 +745,41 @@ readInitDeclaratorList' ::
   -> CInitDeclaratorList'
   -> Either Error [(Bool, String, CType)]
 readInitDeclaratorList' _ _ CInitDeclaratorList'Empty = return []
-readInitDeclaratorList' sym previousType (CInitDeclaratorList' decl list) = do
-  d <- readInitDeclarator sym previousType (parseItem decl)
-  listTail <- readInitDeclaratorList' sym previousType (parseItem list)
+readInitDeclaratorList' sym partialType (CInitDeclaratorList' decl list) = do
+  d <- readInitDeclarator sym partialType (parseItem decl)
+  listTail <- readInitDeclaratorList' sym partialType (parseItem list)
   return (d : listTail)
+
+-- Read typedef type & label from CInitDeclaratorList
+readTypedefLabel ::
+     CType -> CInitDeclaratorList -> Either Error (CType, String)
+readTypedefLabel partialType (CInitDeclaratorList decl list) =
+  if parseItem list == CInitDeclaratorList'Empty
+    then readTypedefLabelInitDeclarator partialType (parseItem decl)
+    else Left . SyntaxError (parseLoc list) $
+           "Multiple typedef labels specified"
+
+
+readTypedefLabelInitDeclarator ::
+     CType -> CInitDeclarator -> Either Error (CType, String)
+readTypedefLabelInitDeclarator partialType (CInitDeclarator decl initializer) =
+  if parseItem initializer == CAssignInitializerOptionalEmpty
+    then readTypedefLabelDeclarator partialType (parseItem decl)
+    else Left . SyntaxError (parseLoc initializer) $
+           "Typedef and assignment in same statement"
+
+readTypedefLabelDeclarator ::
+     CType -> CDeclarator -> Either Error (CType, String)
+readTypedefLabelDeclarator
+     partialType (CDeclarator pointerOpt directDecl) = do
+  typedefType <- readPointerOptional partialType pointerOpt
+  case parseItem directDecl of
+    CDirectDeclaratorId
+         cId ParseItem { parseItem = CDirectDeclarator'Empty } ->
+      let CIdentifier identifier = parseItem cId
+      in return (typedefType, identifier)
+    _ -> Left . SyntaxError (parseLoc directDecl) $ "Invalid typedef statement"
+
 
 {- Check if the declaration specifier list specifies a type
    associated with a typedef label -}
@@ -816,38 +799,27 @@ readDeclaration ::
 readDeclaration sym (CDeclaration spec Nothing) = do
   isTDef <- isTypeDef (parseLoc spec) (parseItem spec)
   if isTDef
-    then do
-      (typedefLabels, t) <-
-        readDeclarationSpecifiersTypedef (parseLoc spec) sym (parseItem spec)
-      let variables = map (False,, t) typedefLabels
-      return (True, variables)
+    then Left . SyntaxError (parseLoc spec) $ "Invalid typedef statement"
     else do
-      t <- readCType (parseLoc spec) sym (parseItem spec)
-      case dataType t of
-        TUnion (Just label) _ -> return (False, [(False, label, t)])
-        TStruct (Just label) _ -> return (False, [(False, label, t)])
-        TEnum (Just label) _ -> return (False, [(False, label, t)])
-        TFunction label _ _ _ -> return (False, [(False, label, t)])
+      declaredType <- readCType (parseLoc spec) sym (parseItem spec)
+      case dataType declaredType of
+        TUnion (Just label) _ -> return (False, [(False, label, declaredType)])
+        TStruct (Just label) _ ->
+          return (False, [(False, label, declaredType)])
+        TEnum (Just label) _ -> return (False, [(False, label, declaredType)])
+        TFunction label _ _ _ -> return (False, [(False, label, declaredType)])
         _ -> Left . SyntaxError (parseLoc spec) $ "No identifier specified"
 readDeclaration sym (CDeclaration spec (Just list)) = do
   isTDef <- isTypeDef (parseLoc spec) (parseItem spec)
   if isTDef
     then do
-      (typedefLabels, t) <-
-        readDeclarationSpecifiersTypedef (parseLoc spec) sym (parseItem spec)
-      d <- readInitDeclaratorList sym t (parseItem list)
-      if all (\(a, _, _) -> not a) d
-        then
-          return
-            ( True
-            , map (False,, t) typedefLabels ++ d
-            )
-        else
-          Left . SyntaxError (parseLoc spec) $
-            "Value assigned to typedef declaration"
+      partialType <- readCType (parseLoc spec) sym (parseItem spec)
+      (typedefType, tdLabel) <-
+        readTypedefLabel partialType { storageClass = [] } (parseItem list)
+      return (True, [(False, tdLabel, typedefType)])
     else do
-      t <- readCType (parseLoc spec) sym (parseItem spec)
-      d <- readInitDeclaratorList sym t (parseItem list)
+      partialType <- readCType (parseLoc spec) sym (parseItem spec)
+      d <- readInitDeclaratorList sym partialType (parseItem list)
       return (False, d)
 
 {- Read a list of declarations. Return a list of tuples of
@@ -879,96 +851,102 @@ readDeclarationList sym (CDeclarationList decl (Just list)) = do
 readDirectDeclarator ::
      SymbolTable -> CType -> CDirectDeclarator -> Either Error (String, CType)
 readDirectDeclarator
-     sym previousType (CDirectDeclaratorId cId directDecl') = do
-  t <- readDirectDeclarator' sym previousType identifier (parseItem directDecl')
-  return (identifier, t)
+     sym partialType (CDirectDeclaratorId cId directDecl') = do
+  declaredType <-
+    readDirectDeclarator' sym partialType identifier (parseItem directDecl')
+  return (identifier, declaredType)
   where CIdentifier identifier = parseItem cId
 readDirectDeclarator
-     sym previousType (CDirectDeclaratorParen decl directDecl') = do
-  (identifier, t) <- readDeclarator sym previousType (parseItem decl)
-  t' <- readDirectDeclarator' sym t identifier (parseItem directDecl')
-  return (identifier, t')
+     sym partialType (CDirectDeclaratorParen decl directDecl') = do
+  (identifier, partialType') <- readDeclarator sym partialType (parseItem decl)
+  declaredType <-
+    readDirectDeclarator' sym partialType' identifier (parseItem directDecl')
+  return (identifier, declaredType)
 
 readDirectDeclarator' ::
      SymbolTable -> CType -> String -> CDirectDeclarator' -> Either Error CType
-readDirectDeclarator' _ previousType _ CDirectDeclarator'Empty =
-  return previousType
+readDirectDeclarator' _ t _ CDirectDeclarator'Empty =
+  return t
 readDirectDeclarator'
      sym
-     previousType
+     arrayType
      label
      (CDirectDeclarator'ConstExpr (Just constExpr) directDecl') = do
   arrayLength <-
     evaluateConstantExpression (parseItem constExpr)
       >>= doubleToInteger (parseLoc constExpr)
-  let t = CType { storageClass = []
-                , typeQualifier = []
-                , dataType = TArray previousType (Just arrayLength)
-                }
-  readDirectDeclarator' sym t label (parseItem directDecl')
+  let partialType = CType { storageClass = []
+                          , typeQualifier = []
+                          , dataType = TArray arrayType (Just arrayLength)
+                          }
+  readDirectDeclarator' sym partialType label (parseItem directDecl')
 readDirectDeclarator'
-     sym previousType label (CDirectDeclarator'ConstExpr Nothing directDecl') =
-  readDirectDeclarator' sym t label (parseItem directDecl')
+     sym arrayType label (CDirectDeclarator'ConstExpr Nothing directDecl') =
+  readDirectDeclarator' sym partialType label (parseItem directDecl')
   where
-    t = CType { storageClass = []
-              , typeQualifier = []
-              , dataType = TArray previousType Nothing
-              }
+    partialType = CType { storageClass = []
+                        , typeQualifier = []
+                        , dataType = TArray arrayType Nothing
+                        }
 readDirectDeclarator'
      sym
-     previousType
+     returnType
      label
      (CDirectDeclarator'ParamTypeList typeList directDecl') = do
   (varArgs, types) <- readParamTypeList sym (parseItem typeList)
-  let t = CType { storageClass = []
-                , typeQualifier = []
-                , dataType =
-                    TFunction label previousType (map snd types) varArgs
-                }
-  validateFunctionReturnType (parseLoc typeList) t
-  readDirectDeclarator' sym t label (parseItem directDecl')
+  let partialType =
+        CType { storageClass = []
+              , typeQualifier = []
+              , dataType =
+                  TFunction label returnType (map snd types) varArgs
+              }
+  validateFunctionReturnType (parseLoc typeList) returnType
+  readDirectDeclarator' sym partialType label (parseItem directDecl')
 readDirectDeclarator'
-     sym previousType label (CDirectDeclarator'IdList idList directDecl') =
+     sym returnType label (CDirectDeclarator'IdList idList directDecl') =
   case idList of
     Just list ->
       Left . SyntaxError (parseLoc list) $
         "No parameter types given in function declaration"
     Nothing ->
-      readDirectDeclarator' sym t label (parseItem directDecl')
-      where t = CType { storageClass = []
-                      , typeQualifier = []
-                      , dataType = TFunction label previousType [] True
-                      }
+      readDirectDeclarator' sym partialType label (parseItem directDecl')
+      where partialType =
+              CType { storageClass = []
+                    , typeQualifier = []
+                    , dataType = TFunction label returnType [] True
+                    }
 
 {- Read a declarator. Return a tuple of the name
    of the variable declared & its type. -}
 readDeclarator ::
      SymbolTable -> CType -> CDeclarator -> Either Error (String, CType)
-readDeclarator sym previousType (CDeclarator pointerOpt directDecl) = do
-  t <- readPointerOptional previousType pointerOpt
-  readDirectDeclarator sym t (parseItem directDecl)
+readDeclarator sym partialType (CDeclarator pointerOpt directDecl) = do
+  partialType' <- readPointerOptional partialType pointerOpt
+  readDirectDeclarator sym partialType' (parseItem directDecl)
 
 {- Read a direct abstract declarator (direct declarator without a label -}
 readDirectAbstractDeclarator ::
      CType -> CDirectAbstractDeclarator -> Either Error CType
 readDirectAbstractDeclarator
-     previousType (CDirectAbstractDeclaratorIndexed Nothing decl) =
-  readDirectAbstractDeclarator' t (parseItem decl)
-  where t = CType { storageClass = []
-                  , typeQualifier = []
-                  , dataType = TArray previousType Nothing
-                  }
+     arrayType (CDirectAbstractDeclaratorIndexed Nothing decl) =
+  readDirectAbstractDeclarator' partialType (parseItem decl)
+  where partialType =
+          CType { storageClass = []
+                , typeQualifier = []
+                , dataType = TArray arrayType Nothing
+                }
 readDirectAbstractDeclarator
-     previousType
+     arrayType
      (CDirectAbstractDeclaratorIndexed (Just constExpr) decl) = do
   arrayLength <-
     evaluateConstantExpression (parseItem constExpr)
       >>= doubleToInteger (parseLoc constExpr)
-  let t = CType { storageClass = []
-                , typeQualifier = []
-                , dataType = TArray previousType (Just arrayLength)
-                }
-  readDirectAbstractDeclarator' t (parseItem decl)
+  let partialType =
+        CType { storageClass = []
+              , typeQualifier = []
+              , dataType = TArray arrayType (Just arrayLength)
+              }
+  readDirectAbstractDeclarator' partialType (parseItem decl)
 -- TODO: Find out what this is supposed to do
 readDirectAbstractDeclarator _ (CDirectAbstractDeclaratorParen decl _) =
   Left . InternalError (parseLoc decl) $ "unimplemented functionality"
@@ -978,38 +956,40 @@ readDirectAbstractDeclarator _ (CDirectAbstractDeclaratorParams _ decl) =
 
 readDirectAbstractDeclarator' ::
      CType -> CDirectAbstractDeclarator' -> Either Error CType
-readDirectAbstractDeclarator' previousType CDirectAbstractDeclarator'Empty =
-  return previousType
+readDirectAbstractDeclarator' t CDirectAbstractDeclarator'Empty =
+  return t
 readDirectAbstractDeclarator'
-     previousType (CDirectAbstractDeclarator'Const Nothing decl) =
-  readDirectAbstractDeclarator' t (parseItem decl)
-  where t = CType { storageClass = []
-                  , typeQualifier = []
-                  , dataType = TArray previousType Nothing
-                  }
+     arrayType (CDirectAbstractDeclarator'Const Nothing decl) =
+  readDirectAbstractDeclarator' partialType (parseItem decl)
+  where partialType =
+          CType { storageClass = []
+                , typeQualifier = []
+                , dataType = TArray arrayType Nothing
+                }
 readDirectAbstractDeclarator'
-     previousType
+     arrayType
      (CDirectAbstractDeclarator'Const (Just constExpr) decl) = do
   arrayLength <-
     evaluateConstantExpression (parseItem constExpr)
       >>= doubleToInteger (parseLoc constExpr)
-  let t = CType { storageClass = []
-                , typeQualifier = []
-                , dataType = TArray previousType (Just arrayLength)
-                }
-  readDirectAbstractDeclarator' t (parseItem decl)
+  let partialType =
+        CType { storageClass = []
+              , typeQualifier = []
+              , dataType = TArray arrayType (Just arrayLength)
+              }
+  readDirectAbstractDeclarator' partialType (parseItem decl)
 -- TODO: find out what this is actually supposed to do
 readDirectAbstractDeclarator' _ (CDirectAbstractDeclarator'Params _ decl) =
   Left . SyntaxError (parseLoc decl) $ "Unexpected parameter list"
 
 {- Read an abstract declarator (declarator without a label) -}
 readAbstractDeclarator :: CType -> CAbstractDeclarator -> Either Error CType
-readAbstractDeclarator previousType (CAbstractDeclaratorPointer pointer) =
-  readPointer previousType (parseItem pointer)
+readAbstractDeclarator pointerType (CAbstractDeclaratorPointer pointer) =
+  readPointer pointerType (parseItem pointer)
 readAbstractDeclarator
-     previousType (CAbstractDeclaratorDirect pointerOpt directDecl) = do
-  t <- readPointerOptional previousType pointerOpt
-  readDirectAbstractDeclarator t (parseItem directDecl)
+     partialType (CAbstractDeclaratorDirect pointerOpt directDecl) = do
+  partialType' <- readPointerOptional partialType pointerOpt
+  readDirectAbstractDeclarator partialType' (parseItem directDecl)
 
 -------------
 -- HELPERS --
@@ -1017,26 +997,28 @@ readAbstractDeclarator
 
 -- Read the type of a pointer to a variable
 readPointer :: CType -> CPointer -> Either Error CType
-readPointer previousType (CPointer Nothing pointerOpt) =
-  readPointerOptional t pointerOpt
-  where t = CType { storageClass = []
-                  , typeQualifier = []
-                  , dataType = TPointer previousType
-                  }
-readPointer previousType (CPointer (Just qualifierList) pointerOpt) = do
+readPointer pointerType (CPointer Nothing pointerOpt) =
+  readPointerOptional partialType pointerOpt
+  where partialType =
+          CType { storageClass = []
+                , typeQualifier = []
+                , dataType = TPointer pointerType
+                }
+readPointer pointerType (CPointer (Just qualifierList) pointerOpt) = do
   qualifiers <-
     readTypeQualifiers (parseLoc qualifierList) (parseItem qualifierList)
-  let t = CType { storageClass = []
-                , typeQualifier = qualifiers
-                , dataType = TPointer previousType
-                }
-  readPointerOptional t pointerOpt
+  let partialType =
+        CType { storageClass = []
+              , typeQualifier = qualifiers
+              , dataType = TPointer pointerType
+              }
+  readPointerOptional partialType pointerOpt
 
 readPointerOptional ::
      CType -> Maybe (ParseItem CPointer) -> Either Error CType
-readPointerOptional previousType Nothing = return previousType
-readPointerOptional previousType (Just pointer) =
-  readPointer previousType (parseItem pointer)
+readPointerOptional pointerType Nothing = return pointerType
+readPointerOptional pointerType (Just pointer) =
+  readPointer pointerType (parseItem pointer)
 
 -- Extract a list of labels from CIdentifierList
 readIdentifierList :: CIdentifierList -> [String]

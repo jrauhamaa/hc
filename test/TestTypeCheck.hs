@@ -61,7 +61,7 @@ testTypeCheck = hspec $ do
                   []
                   (TEnum
                     (Just "foo")
-                    (M.fromList [("FOO", 1), ("BAR", 1), ("BAZ", 1)])))
+                    (M.fromList [("FOO", 1), ("BAR", 2), ("BAZ", 3)])))
         enums . symbolTable <$> (ast >>= typeAnnotate)
           `shouldBe` Right expectedSymbols
 

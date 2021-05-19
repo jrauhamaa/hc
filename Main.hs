@@ -7,7 +7,7 @@ import Scanner (ScanItem(..), scanStr, CLexeme(..))
 
 main :: IO ()
 main = do
-  let fName = "test/hellotransformed.c"
+  let fName = "test/hello.c"
   let endmarker = ScanItem ("", (0, 0)) "" LEndMarker
   sourceCode <- readFile fName
   pp <- preProcessCode fName sourceCode

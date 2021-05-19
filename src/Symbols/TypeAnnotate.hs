@@ -160,7 +160,7 @@ tIdentifier item sym = Right (item { symbolTable = sym })
 tTranslationUnit :: TypeAnnotator CTranslationUnit
 tTranslationUnit (ParseItem l (CTranslationUnit ext opt) _) sym = do
   ext' <- tExternalDeclaration ext sym
-  opt' <- tOptional tTranslationUnit opt sym
+  opt' <- tOptional tTranslationUnit opt (symbolTable ext')
   let sym' = case opt' of
                Just o -> symbolTable o
                Nothing -> symbolTable ext'
